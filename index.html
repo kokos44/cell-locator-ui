@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Сканер Координат БС (Google Geolocation)</title>
+    <title>Сканер Координат БС (Через Backend)</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -89,6 +89,20 @@
         a.map-link:hover {
             text-decoration: underline;
         }
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            vertical-align: middle;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -97,8 +111,8 @@
     <h2>Сканер секторів БС</h2>
     
     <div class="form-group">
-        <label for="apiKey">Google API Key:</label>
-        <input type="password" id="apiKey" placeholder="AIzaSy...">
+        <label for="appPassword">Пароль доступу:</label>
+        <input type="password" id="appPassword" placeholder="Введіть ваш таємний пароль">
     </div>
 
     <div class="form-group">
@@ -175,18 +189,17 @@
     });
 
     async function startSearch() {
-        const apiKey = document.getElementById('apiKey').value.trim();
+        // Отримуємо пароль замість API ключа
+        const password = document.getElementById('appPassword').value.trim();
         const bsNumberRaw = document.getElementById('bsNumber').value.trim();
         const operatorValue = document.getElementById('operator').value;
         const bandValue = document.getElementById('band').value;
 
-        if (!apiKey || !bsNumberRaw || !operatorValue || !bandValue) {
+        if (!password || !bsNumberRaw || !operatorValue || !bandValue) {
             alert("Будь ласка, заповніть всі поля!");
             return;
         }
 
-        // Логіка розбору поля "Номер БС"
-        // Спліт за будь-яким символом, що не є цифрою (дефіс, пробіл, кома)
         const bsParts = bsNumberRaw.split(/[^\d]+/);
         
         if (bsParts.length < 2 || !bsParts[0] || !bsParts[1]) {
@@ -200,7 +213,12 @@
         const [mcc, mnc] = operatorValue.split(',').map(Number);
         const sectors = JSON.parse(bandValue);
         
-        resultsDiv.innerHTML = '<i>Виконуємо запити до Google...</i>';
+        // Додано повідомлення про можливу затримку Render
+        resultsDiv.innerHTML = '<i>З'єднуємось із сервером... (Якщо сервер спав, перший запит може тривати до 50 секунд)</i>';
+        
+        // Змінюємо вигляд кнопки на час завантаження
+        const originalBtnText = searchBtn.innerHTML;
+        searchBtn.innerHTML = '<span class="spinner"></span> Шукаю...';
         searchBtn.disabled = true;
 
         let resultsHTML = '';
@@ -208,18 +226,20 @@
         for (const sector of sectors) {
             const fullCellId = (enodeb * 256) + sector;
 
+            // Формуємо дані для вашого бекенду на Python
             const payload = {
-                "considerIp": "false",
-                "cellTowers": [{
-                    "cellId": fullCellId,
-                    "locationAreaCode": tac,
-                    "mobileCountryCode": mcc,
-                    "mobileNetworkCode": mnc
-                }]
+                "password": password,
+                "cellId": fullCellId,
+                "tac": tac,
+                "mcc": mcc,
+                "mnc": mnc
             };
 
             try {
-                const response = await fetch(`https://www.googleapis.com/geolocation/v1/locate?key=${apiKey}`, {
+                // ВАЖЛИВО: Замініть цей URL на реальну адресу вашого додатку на Render
+                const renderUrl = 'https://cell-backend-pih1.onrender.com'; 
+                
+                const response = await fetch(renderUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -240,22 +260,27 @@
                             <a class="map-link" href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}" target="_blank">Подивитись на Google Maps</a>
                         </div>`;
                 } else {
+                    // Виведення помилки від бекенду або від Google
+                    const errorMsg = data.error?.message || "Невідома помилка";
                     resultsHTML += `
                         <div class="result-card error">
                             <strong>Сектор: ${sector}</strong> (Full Cell ID: ${fullCellId})<br>
-                            Помилка: ${data.error.message || "Не знайдено"}
+                            Помилка: ${errorMsg}
                         </div>`;
                 }
             } catch (error) {
                 resultsHTML += `
                     <div class="result-card error">
                         <strong>Сектор: ${sector}</strong><br>
-                        Помилка з'єднання: ${error.message}
+                        Помилка з'єднання з сервером (Render): ${error.message}
                     </div>`;
             }
         }
 
         resultsDiv.innerHTML = resultsHTML;
+        
+        // Повертаємо кнопку в початковий стан
+        searchBtn.innerHTML = originalBtnText;
         searchBtn.disabled = false;
     }
 </script>
