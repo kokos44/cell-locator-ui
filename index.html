@@ -212,7 +212,7 @@
         const [mcc, mnc] = operatorValue.split(',').map(Number);
         const sectors = JSON.parse(bandValue);
         
-        resultsDiv.innerHTML = '<i>З'єднуємось із сервером... (Якщо сервер спав, перший запит може тривати до 50 секунд)</i>';
+        resultsDiv.innerHTML = "<i>З'єднуємось із сервером... (Якщо сервер спав, перший запит може тривати до 50 секунд)</i>";
         
         const originalBtnText = searchBtn.innerHTML;
         searchBtn.innerHTML = '<span class="spinner"></span> Шукаю...';
@@ -266,7 +266,7 @@
                 resultsHTML += `
                     <div class="result-card error">
                         <strong>Сектор: ${sector}</strong><br>
-                        Помилка з'єднання з сервером (Render): ${error.message}
+                        Помилка зєднання з сервером (Render): ${error.message}
                     </div>`;
             }
         }
