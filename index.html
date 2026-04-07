@@ -189,7 +189,6 @@
     });
 
     async function startSearch() {
-        // Отримуємо пароль замість API ключа
         const password = document.getElementById('appPassword').value.trim();
         const bsNumberRaw = document.getElementById('bsNumber').value.trim();
         const operatorValue = document.getElementById('operator').value;
@@ -213,10 +212,8 @@
         const [mcc, mnc] = operatorValue.split(',').map(Number);
         const sectors = JSON.parse(bandValue);
         
-        // Додано повідомлення про можливу затримку Render
         resultsDiv.innerHTML = '<i>З'єднуємось із сервером... (Якщо сервер спав, перший запит може тривати до 50 секунд)</i>';
         
-        // Змінюємо вигляд кнопки на час завантаження
         const originalBtnText = searchBtn.innerHTML;
         searchBtn.innerHTML = '<span class="spinner"></span> Шукаю...';
         searchBtn.disabled = true;
@@ -226,7 +223,6 @@
         for (const sector of sectors) {
             const fullCellId = (enodeb * 256) + sector;
 
-            // Формуємо дані для вашого бекенду на Python
             const payload = {
                 "password": password,
                 "cellId": fullCellId,
@@ -236,7 +232,6 @@
             };
 
             try {
-                // ВАЖЛИВО: Замініть цей URL на реальну адресу вашого додатку на Render
                 const renderUrl = 'https://cell-backend-pih1.onrender.com'; 
                 
                 const response = await fetch(renderUrl, {
@@ -260,7 +255,6 @@
                             <a class="map-link" href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}" target="_blank">Подивитись на Google Maps</a>
                         </div>`;
                 } else {
-                    // Виведення помилки від бекенду або від Google
                     const errorMsg = data.error?.message || "Невідома помилка";
                     resultsHTML += `
                         <div class="result-card error">
@@ -279,7 +273,6 @@
 
         resultsDiv.innerHTML = resultsHTML;
         
-        // Повертаємо кнопку в початковий стан
         searchBtn.innerHTML = originalBtnText;
         searchBtn.disabled = false;
     }
