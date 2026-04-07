@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сканер Координат БС (Google Geolocation)</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            max-width: 600px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+        .container {
+            background: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        h2 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 25px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        input[type="text"], input[type="password"], input[type="number"], select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        #results {
+            margin-top: 25px;
+        }
+        .result-card {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            border-left: 5px solid #3498db;
+        }
+        .error {
+            border-left-color: #e74c3c;
+            background: #fadbd8;
+        }
+        a.map-link {
+            color: #2980b9;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        a.map-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Сканер секторів БС</h2>
+    
+    <div class="form-group">
+        <label for="apiKey">Google API Key:</label>
+        <input type="password" id="apiKey" placeholder="AIzaSy...">
+    </div>
+
+    <div class="form-group">
+        <label for="enodeb">Номер базової станції (eNodeB):</label>
+        <input type="number" id="enodeb" placeholder="Наприклад: 12345">
+    </div>
+
+    <div class="form-group">
+        <label for="tac">LAC / TAC (Обов'язково для точного пошуку):</label>
+        <input type="number" id="tac" placeholder="Наприклад: 65432">
+    </div>
+
+    <div class="form-group">
+        <label for="operator">Оператор:</label>
+        <select id="operator">
+            <option value="">-- Оберіть оператора --</option>
+            <option value="255,1">Vodafone UA (MCC 255 MNC 01)</option>
+            <option value="255,3">Kyivstar (MCC 255 MNC 03)</option>
+            <option value="255,6">lifecell (MCC 255 MNC 06)</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="band">Band (Сектори):</label>
+        <select id="band" disabled>
+            <option value="">-- Спочатку оберіть оператора --</option>
+        </select>
+    </div>
+
+    <button id="searchBtn" onclick="startSearch()">Пошук</button>
+
+    <div id="results"></div>
+</div>
+
+<script>
+    // Дані по бендах та секторах для кожного оператора
+    const bandsData = {
+        "255,1": { // Vodafone (MNC 1)
+            "B1 (11, 12, 13)": [11, 12, 13],
+            "B3 (31, 32, 33)": [31, 32, 33],
+            "B7 (71, 72, 73)": [71, 72, 73],
+            "B8 (81, 82, 83)": [81, 82, 83],
+            "B38 (61, 62, 63)": [61, 62, 63]
+        },
+        "255,3": { // Kyivstar (MNC 3)
+            "B1 (51, 52, 53)": [51, 52, 53],
+            "B3 (31, 32, 33)": [31, 32, 33],
+            "B7 (41, 42, 43)": [41, 42, 43],
+            "B8 (21, 22, 23)": [21, 22, 23],
+            "B40 (61, 62, 63)": [61, 62, 63]
+        },
+        "255,6": { // lifecell (MNC 6)
+            "B1 (12, 22, 32)": [12, 22, 32],
+            "B3 (11, 21, 31)": [11, 21, 31],
+            "B7 (13, 23, 33)": [13, 23, 33],
+            "B8 (19, 29, 39)": [19, 29, 39]
+        }
+    };
+
+    const operatorSelect = document.getElementById('operator');
+    const bandSelect = document.getElementById('band');
+    const resultsDiv = document.getElementById('results');
+    const searchBtn = document.getElementById('searchBtn');
+
+    // Логіка оновлення списку бендів при зміні оператора
+    operatorSelect.addEventListener('change', function() {
+        bandSelect.innerHTML = '<option value="">-- Оберіть Band --</option>';
+        if (this.value) {
+            bandSelect.disabled = false;
+            const bands = bandsData[this.value];
+            for (const [bandName, sectors] of Object.entries(bands)) {
+                const option = document.createElement('option');
+                option.value = JSON.stringify(sectors); // Зберігаємо масив секторів у value
+                option.textContent = bandName;
+                bandSelect.appendChild(option);
+            }
+        } else {
+            bandSelect.disabled = true;
+        }
+    });
+
+    // Основна функція пошуку
+    async function startSearch() {
+        const apiKey = document.getElementById('apiKey').value.trim();
+        const enodeb = parseInt(document.getElementById('enodeb').value.trim());
+        const tac = parseInt(document.getElementById('tac').value.trim());
+        const operatorValue = document.getElementById('operator').value;
+        const bandValue = document.getElementById('band').value;
+
+        // Перевірка вводу
+        if (!apiKey || !enodeb || !tac || !operatorValue || !bandValue) {
+            alert("Будь ласка, заповніть всі поля!");
+            return;
+        }
+
+        const [mcc, mnc] = operatorValue.split(',').map(Number);
+        const sectors = JSON.parse(bandValue); // Відновлюємо масив секторів з value
+        
+        resultsDiv.innerHTML = '<i>Виконуємо запити до Google...</i>';
+        searchBtn.disabled = true;
+
+        let resultsHTML = '';
+
+        // Проходимо циклом по всіх секторах обраного бенду
+        for (const sector of sectors) {
+            // Формула розрахунку повного ECI (Cell ID) для LTE
+            const fullCellId = (enodeb * 256) + sector;
+
+            const payload = {
+                "considerIp": "false",
+                "cellTowers": [{
+                    "cellId": fullCellId,
+                    "locationAreaCode": tac,
+                    "mobileCountryCode": mcc,
+                    "mobileNetworkCode": mnc
+                }]
+            };
+
+            try {
+                const response = await fetch(`https://www.googleapis.com/geolocation/v1/locate?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    const lat = data.location.lat;
+                    const lng = data.location.lng;
+                    const accuracy = data.accuracy;
+                    
+                    resultsHTML += `
+                        <div class="result-card">
+                            <strong>Сектор: ${sector}</strong> (Full Cell ID: ${fullCellId})<br>
+                            Координати: ${lat}, ${lng}<br>
+                            Точність: ~${accuracy} метрів<br>
+                            <a class="map-link" href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}" target="_blank">Подивитись на Google Maps</a>
+                        </div>`;
+                } else {
+                    resultsHTML += `
+                        <div class="result-card error">
+                            <strong>Сектор: ${sector}</strong> (Full Cell ID: ${fullCellId})<br>
+                            Помилка: ${data.error.message || "Не знайдено"}
+                        </div>`;
+                }
+            } catch (error) {
+                resultsHTML += `
+                    <div class="result-card error">
+                        <strong>Сектор: ${sector}</strong><br>
+                        Помилка з'єднання: ${error.message}
+                    </div>`;
+            }
+        }
+
+        resultsDiv.innerHTML = resultsHTML;
+        searchBtn.disabled = false;
+    }
+</script>
+
+</body>
+</html>
