@@ -33,13 +33,19 @@
             margin-bottom: 5px;
             font-size: 14px;
         }
-        input[type="text"], input[type="password"], input[type="number"], select {
+        input[type="text"], input[type="password"], select {
             width: 100%;
             padding: 10px;
             border: 1px solid #ccc;
             border-radius: 5px;
             box-sizing: border-box;
             font-size: 14px;
+        }
+        .hint {
+            display: block;
+            color: #7f8c8d;
+            font-size: 12px;
+            margin-top: 4px;
         }
         button {
             width: 100%;
@@ -96,13 +102,9 @@
     </div>
 
     <div class="form-group">
-        <label for="enodeb">Номер базової станції (eNodeB):</label>
-        <input type="number" id="enodeb" placeholder="Наприклад: 12345">
-    </div>
-
-    <div class="form-group">
-        <label for="tac">LAC / TAC (Обов'язково для точного пошуку):</label>
-        <input type="number" id="tac" placeholder="Наприклад: 65432">
+        <label for="bsNumber">Номер БС (LAC та eNodeB):</label>
+        <input type="text" id="bsNumber" placeholder="Наприклад: 65432-12345">
+        <span class="hint">Введіть LAC та номер бази через дефіс, пробіл або кому</span>
     </div>
 
     <div class="form-group">
@@ -128,23 +130,22 @@
 </div>
 
 <script>
-    // Дані по бендах та секторах для кожного оператора
     const bandsData = {
-        "255,1": { // Vodafone (MNC 1)
+        "255,1": {
             "B1 (11, 12, 13)": [11, 12, 13],
             "B3 (31, 32, 33)": [31, 32, 33],
             "B7 (71, 72, 73)": [71, 72, 73],
             "B8 (81, 82, 83)": [81, 82, 83],
             "B38 (61, 62, 63)": [61, 62, 63]
         },
-        "255,3": { // Kyivstar (MNC 3)
+        "255,3": {
             "B1 (51, 52, 53)": [51, 52, 53],
             "B3 (31, 32, 33)": [31, 32, 33],
             "B7 (41, 42, 43)": [41, 42, 43],
             "B8 (21, 22, 23)": [21, 22, 23],
             "B40 (61, 62, 63)": [61, 62, 63]
         },
-        "255,6": { // lifecell (MNC 6)
+        "255,6": {
             "B1 (12, 22, 32)": [12, 22, 32],
             "B3 (11, 21, 31)": [11, 21, 31],
             "B7 (13, 23, 33)": [13, 23, 33],
@@ -157,7 +158,6 @@
     const resultsDiv = document.getElementById('results');
     const searchBtn = document.getElementById('searchBtn');
 
-    // Логіка оновлення списку бендів при зміні оператора
     operatorSelect.addEventListener('change', function() {
         bandSelect.innerHTML = '<option value="">-- Оберіть Band --</option>';
         if (this.value) {
@@ -165,7 +165,7 @@
             const bands = bandsData[this.value];
             for (const [bandName, sectors] of Object.entries(bands)) {
                 const option = document.createElement('option');
-                option.value = JSON.stringify(sectors); // Зберігаємо масив секторів у value
+                option.value = JSON.stringify(sectors);
                 option.textContent = bandName;
                 bandSelect.appendChild(option);
             }
@@ -174,31 +174,38 @@
         }
     });
 
-    // Основна функція пошуку
     async function startSearch() {
         const apiKey = document.getElementById('apiKey').value.trim();
-        const enodeb = parseInt(document.getElementById('enodeb').value.trim());
-        const tac = parseInt(document.getElementById('tac').value.trim());
+        const bsNumberRaw = document.getElementById('bsNumber').value.trim();
         const operatorValue = document.getElementById('operator').value;
         const bandValue = document.getElementById('band').value;
 
-        // Перевірка вводу
-        if (!apiKey || !enodeb || !tac || !operatorValue || !bandValue) {
+        if (!apiKey || !bsNumberRaw || !operatorValue || !bandValue) {
             alert("Будь ласка, заповніть всі поля!");
             return;
         }
 
+        // Логіка розбору поля "Номер БС"
+        // Спліт за будь-яким символом, що не є цифрою (дефіс, пробіл, кома)
+        const bsParts = bsNumberRaw.split(/[^\d]+/);
+        
+        if (bsParts.length < 2 || !bsParts[0] || !bsParts[1]) {
+            alert("Помилка формату! Введіть LAC та номер БС разом. Наприклад: 65432-12345");
+            return;
+        }
+
+        const tac = parseInt(bsParts[0], 10);
+        const enodeb = parseInt(bsParts[1], 10);
+        
         const [mcc, mnc] = operatorValue.split(',').map(Number);
-        const sectors = JSON.parse(bandValue); // Відновлюємо масив секторів з value
+        const sectors = JSON.parse(bandValue);
         
         resultsDiv.innerHTML = '<i>Виконуємо запити до Google...</i>';
         searchBtn.disabled = true;
 
         let resultsHTML = '';
 
-        // Проходимо циклом по всіх секторах обраного бенду
         for (const sector of sectors) {
-            // Формула розрахунку повного ECI (Cell ID) для LTE
             const fullCellId = (enodeb * 256) + sector;
 
             const payload = {
