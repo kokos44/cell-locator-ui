@@ -212,6 +212,7 @@
         const [mcc, mnc] = operatorValue.split(',').map(Number);
         const sectors = JSON.parse(bandValue);
         
+        // Використовуємо подвійні лапки для уникнення конфлікту з апострофом
         resultsDiv.innerHTML = "<i>З'єднуємось із сервером... (Якщо сервер спав, перший запит може тривати до 50 секунд)</i>";
         
         const originalBtnText = searchBtn.innerHTML;
@@ -232,6 +233,8 @@
             };
 
             try {
+                // !!! УВАГА !!!
+                // Замініть цей URL на адресу вашого додатку, яку вам видав Render
                 const renderUrl = 'https://cell-backend-pih1.onrender.com'; 
                 
                 const response = await fetch(renderUrl, {
@@ -266,7 +269,7 @@
                 resultsHTML += `
                     <div class="result-card error">
                         <strong>Сектор: ${sector}</strong><br>
-                        Помилка зєднання з сервером (Render): ${error.message}
+                        Помилка з'єднання з сервером (Render): ${error.message}
                     </div>`;
             }
         }
