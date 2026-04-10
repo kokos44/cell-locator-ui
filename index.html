@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Сканер Координат БС (LTE Only)</title>
+    <title>LTE Cell Scanner</title>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; max-width: 600px; margin: 40px auto; padding: 20px; }
         .container { background: #fff; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
@@ -15,18 +15,21 @@
         button:hover { background-color: #2980b9; }
         button:disabled { background-color: #95a5a6; cursor: not-allowed; }
         #results { margin-top: 25px; }
-        .result-card { background: #ecf0f1; padding: 15px; border-radius: 5px; margin-bottom: 10px; border-left: 5px solid #3498db; }
+        .result-card { background: #ecf0f1; padding: 15px; border-radius: 5px; margin-bottom: 10px; border-left: 5px solid #3498db; position: relative; }
         .error { border-left-color: #e74c3c; background: #fadbd8; }
-        a.map-link { color: #2980b9; text-decoration: none; font-weight: bold; }
+        .success { border-left-color: #2ecc71; background: #e8f8f5; }
+        .tower { border-left-color: #9b59b6; background: #f5eef8; border-width: 8px; }
+        a.map-link { display: inline-block; margin-top: 8px; color: #2980b9; text-decoration: none; font-weight: bold; font-size: 14px; }
         a.map-link:hover { text-decoration: underline; }
         .spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(255,255,255,.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s ease-in-out infinite; vertical-align: middle; margin-right: 10px; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        .info-text { font-size: 12px; color: #7f8c8d; margin-top: 5px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Сканер секторів LTE БС</h2>
+    <h2>Сканер секторів LTE</h2>
     
     <div class="form-group">
         <label for="appPassword">Пароль доступу:</label>
@@ -42,14 +45,14 @@
         <label for="operator">Оператор:</label>
         <select id="operator">
             <option value="">-- Оберіть оператора --</option>
-            <option value="255,1">Vodafone UA (MCC 255 MNC 01)</option>
-            <option value="255,3">Kyivstar (MCC 255 MNC 03)</option>
-            <option value="255,6">lifecell (MCC 255 MNC 06)</option>
+            <option value="255,1">Vodafone UA (255-01)</option>
+            <option value="255,3">Kyivstar (255-03)</option>
+            <option value="255,6">lifecell (255-06)</option>
         </select>
     </div>
 
     <div class="form-group">
-        <label for="band">Band (Сектори):</label>
+        <label for="band">Діапазон (Band):</label>
         <select id="band" disabled>
             <option value="">-- Спочатку оберіть оператора --</option>
         </select>
@@ -63,18 +66,24 @@
 <script>
     const bandsData = {
         "255,1": {
-            "B1 (11, 12, 13)": [11, 12, 13], "B3 (31, 32, 33)": [31, 32, 33],
-            "B7 (71, 72, 73)": [71, 72, 73], "B8 (81, 82, 83)": [81, 82, 83],
+            "B1 (11, 12, 13)": [11, 12, 13],
+            "B3 (31, 32, 33)": [31, 32, 33],
+            "B7 (71, 72, 73)": [71, 72, 73],
+            "B8 (81, 82, 83)": [81, 82, 83],
             "B38 (61, 62, 63)": [61, 62, 63]
         },
         "255,3": {
-            "B1 (51, 52, 53)": [51, 52, 53], "B3 (31, 32, 33)": [31, 32, 33],
-            "B7 (41, 42, 43)": [41, 42, 43], "B8 (21, 22, 23)": [21, 22, 23],
+            "B1 (51, 52, 53)": [51, 52, 53],
+            "B3 (31, 32, 33)": [31, 32, 33],
+            "B7 (41, 42, 43)": [41, 42, 43],
+            "B8 (21, 22, 23)": [21, 22, 23],
             "B40 (61, 62, 63)": [61, 62, 63]
         },
         "255,6": {
-            "B1 (12, 22, 32)": [12, 22, 32], "B3 (11, 21, 31)": [11, 21, 31],
-            "B7 (13, 23, 33)": [13, 23, 33], "B8 (19, 29, 39)": [19, 29, 39]
+            "B1 (12, 22, 32)": [12, 22, 32],
+            "B3 (11, 21, 31)": [11, 21, 31],
+            "B7 (13, 23, 33)": [13, 23, 33],
+            "B8 (19, 29, 39)": [19, 29, 39]
         }
     };
 
@@ -88,12 +97,21 @@
         if (this.value) {
             bandSelect.disabled = false;
             const bands = bandsData[this.value];
-            for (const [bandName, sectors] of Object.entries(bands)) {
+            
+            const allSectors = [];
+            for (const [name, sectors] of Object.entries(bands)) {
+                allSectors.push(...sectors);
                 const option = document.createElement('option');
                 option.value = JSON.stringify(sectors);
-                option.textContent = bandName;
+                option.textContent = name;
                 bandSelect.appendChild(option);
             }
+            
+            const allOption = document.createElement('option');
+            allOption.value = JSON.stringify(allSectors);
+            allOption.textContent = "Усі бенди (Повний пошук)";
+            bandSelect.insertBefore(allOption, bandSelect.firstChild.nextSibling);
+            
         } else {
             bandSelect.disabled = true;
         }
@@ -106,7 +124,7 @@
         const bandValue = document.getElementById('band').value;
 
         if (!password || !enodeb || !operatorValue || !bandValue) {
-            alert("Будь ласка, заповніть всі поля!");
+            alert("Заповніть усі поля!");
             return;
         }
 
@@ -114,25 +132,21 @@
         const sectors = JSON.parse(bandValue);
         
         resultsDiv.innerHTML = "<i>З'єднуємось із сервером...</i>";
-        
-        const originalBtnText = searchBtn.innerHTML;
-        searchBtn.innerHTML = '<span class="spinner"></span> Шукаю...';
         searchBtn.disabled = true;
+        const originalText = searchBtn.innerHTML;
+        searchBtn.innerHTML = '<span class="spinner"></span> Шукаю...';
 
         let resultsHTML = '';
+        
+        // Масив для збереження успішних координат
+        let validCoords = [];
 
         for (const sector of sectors) {
             const fullCellId = (enodeb * 256) + sector;
-
-            const payload = {
-                "password": password,
-                "cellId": fullCellId,
-                "mcc": mcc,
-                "mnc": mnc
-            };
+            const payload = { "password": password, "cellId": fullCellId, "mcc": mcc, "mnc": mnc };
 
             try {
-                // !!! ВАЖЛИВО: Замініть цей URL на реальну адресу від Render
+                // ВАЖЛИВО: Замініть на адресу вашого сервера Render
                 const renderUrl = 'https://cell-backend-pih1.onrender.com/locate'; 
                 
                 const response = await fetch(renderUrl, {
@@ -146,34 +160,63 @@
                 if (response.ok) {
                     const lat = data.location.lat;
                     const lng = data.location.lng;
-                    const accuracy = data.accuracy;
+                    
+                    // Зберігаємо для розрахунку центру
+                    validCoords.push({ lat: lat, lng: lng });
+                    
+                    // Чисте посилання на Google Maps
+                    const mapUrl = `https://www.google.com/maps?q=${lat},${lng}`;
                     
                     resultsHTML += `
-                        <div class="result-card">
-                            <strong>Сектор: ${sector}</strong> (Full Cell ID: ${fullCellId})<br>
+                        <div class="result-card success">
+                            <strong>Сектор: ${sector}</strong> (ID: ${fullCellId})<br>
                             Координати: ${lat}, ${lng}<br>
-                            Точність: ~${accuracy} метрів<br>
-                            <a class="map-link" href="https://www.google.com/maps/search/?api=1&query=$${lat},${lng}" target="_blank">Подивитись на Google Maps</a>
+                            Точність: ~${data.accuracy} м<br>
+                            <a class="map-link" href="${mapUrl}" target="_blank">📍 Відкрити сектор на карті</a>
                         </div>`;
                 } else {
-                    const errorMsg = data.error?.message || "Невідома помилка";
                     resultsHTML += `
                         <div class="result-card error">
-                            <strong>Сектор: ${sector}</strong> (Full Cell ID: ${fullCellId})<br>
-                            Помилка: ${errorMsg}
+                            <strong>Сектор: ${sector}</strong> (ID: ${fullCellId})<br>
+                            Помилка: ${data.error?.message || "Не знайдено"}
                         </div>`;
                 }
             } catch (error) {
-                resultsHTML += `
-                    <div class="result-card error">
-                        <strong>Сектор: ${sector}</strong><br>
-                        Помилка з'єднання з сервером (Render): ${error.message}
-                    </div>`;
+                resultsHTML += `<div class="result-card error">Сектор ${sector}: Помилка з'єднання</div>`;
             }
         }
 
+        // Блок розрахунку приблизних координат самої базової станції
+        if (validCoords.length > 0) {
+            let sumLat = 0;
+            let sumLng = 0;
+            
+            for (let coords of validCoords) {
+                sumLat += coords.lat;
+                sumLng += coords.lng;
+            }
+            
+            // Вираховуємо середнє арифметичне з точністю до 6 знаків
+            const avgLat = (sumLat / validCoords.length).toFixed(6);
+            const avgLng = (sumLng / validCoords.length).toFixed(6);
+            const centerMapUrl = `https://www.google.com/maps?q=${avgLat},${avgLng}`;
+            
+            // Якщо знайшли більше одного сектора, виводимо фінальний результат
+            let titleText = validCoords.length > 1 
+                ? `📡 Приблизне розташування БС (Центр ${validCoords.length} секторів)` 
+                : `📡 Розташування БС (за 1 сектором)`;
+
+            resultsHTML += `
+                <div class="result-card tower">
+                    <strong>${titleText}</strong><br>
+                    Координати: ${avgLat}, ${avgLng}<br>
+                    <div class="info-text">Вирахувано математично на основі знайдених даних</div>
+                    <a class="map-link" href="${centerMapUrl}" target="_blank">📍 Показати вишку на Google Maps</a>
+                </div>`;
+        }
+
         resultsDiv.innerHTML = resultsHTML;
-        searchBtn.innerHTML = originalBtnText;
+        searchBtn.innerHTML = originalText;
         searchBtn.disabled = false;
     }
 </script>
