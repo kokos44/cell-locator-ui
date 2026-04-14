@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LTE Range Scanner Pro</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; max-width: 900px; margin: 40px auto; padding: 20px; }
+        .container { background: #fff; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #2c3e50; margin-bottom: 25px; }
+        .form-row { display: flex; gap: 15px; margin-bottom: 15px; }
+        .form-group { flex: 1; margin-bottom: 15px; }
+        label { display: block; font-weight: 600; margin-bottom: 5px; font-size: 14px; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 14px; }
+        button.main-btn { width: 100%; padding: 15px; background-color: #27ae60; color: white; border: none; border-radius: 5px; font-size: 16px; font-weight: bold; cursor: pointer; transition: background 0.3s; margin-top: 10px; }
+        button.main-btn:hover { background-color: #219150; }
+        button.main-btn:disabled { background-color: #95a5a6; cursor: not-allowed; }
+        
+        /* Стилі для панелі секторів */
+        .sectors-panel { border: 1px solid #ccc; border-radius: 5px; padding: 15px; background: #fdfdfd; max-height: 280px; overflow-y: auto; }
+        .band-group { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px dashed #eee; }
+        .band-group:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .band-title { font-weight: bold; margin-bottom: 8px; color: #2c3e50; font-size: 14px; display: flex; align-items: center; justify-content: space-between; }
+        .sector-checkboxes { display: flex; flex-wrap: wrap; gap: 10px; }
+        .sector-label { display: flex; align-items: center; gap: 5px; font-size: 14px; cursor: pointer; background: #ecf0f1; padding: 6px 10px; border-radius: 4px; transition: 0.2s; user-select: none; }
+        .sector-label:hover { background: #d5dbdb; }
+        .sector-label input { width: auto; margin: 0; cursor: pointer; }
+        .action-links { font-size: 12px; font-weight: normal; }
+        .action-links a { color: #3498db; text-decoration: none; cursor: pointer; margin-left: 10px; }
+        .action-links a:hover { text-decoration: underline; }
+
+        #status-bar { display: none; margin: 20px 0; padding: 15px; background: #e8f4fd; border-radius: 5px; border-left: 5px solid #3498db; }
+        #results { margin-top: 25px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        @media (max-width: 600px) { #results { grid-template-columns: 1fr; } .form-row { flex-direction: column; } }
+        .result-card { background: #ecf0f1; padding: 12px; border-radius: 5px; border-left: 4px solid #3498db; font-size: 13px; }
+        .success { border-left-color: #2ecc71; background: #e8f8f5; }
+        .tower-summary { grid-column: 1 / -1; background: #f5eef8; border-left: 8px solid #9b59b6; padding: 15px; }
+        #map-container { height: 500px; width: 100%; margin-top: 20px; border-radius: 10px; display: none; border: 2px solid #ddd; }
+        .badge { background: #34495e; color: white; padding: 2px 5px; border-radius: 3px; font-size: 10px; margin-left: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Масовий сканер LTE БС</h2>
+  <div style="text-align: center; margin-bottom: 20px;">
+    <a href="index.html" style="color: #3498db; font-weight: bold; text-decoration: none;">⬅️ Повернутися до Швидкого сканера</a>
+</div>
+    
+    <div class="form-group">
+        <label for="appPassword">Пароль доступу:</label>
+        <input type="password" id="appPassword" placeholder="Ваш пароль">
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="startEnodeb">Початковий eNodeB:</label>
+            <input type="number" id="startEnodeb" placeholder="942001">
+        </div>
+        <div class="form-group">
+            <label for="endEnodeb">Кінцевий eNodeB:</label>
+            <input type="number" id="endEnodeb" placeholder="942005">
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label for="operator">Оператор:</label>
+        <select id="operator">
+            <option value="">-- Оберіть оператора --</option>
+            <option value="255,1">Vodafone UA</option>
+            <option value="255,3">Kyivstar</option>
+            <option value="255,6">lifecell</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label>Сектори для сканування:</label>
+        <div id="sectors-panel" class="sectors-panel">
+            <em style="color:#7f8c8d; font-size:13px;">Спочатку оберіть оператора</em>
+        </div>
+    </div>
+
+    <button id="scanBtn" class="main-btn" onclick="runRangeScan()">Почати масове сканування</button>
+
+    <div id="status-bar"></div>
+    <div id="map-container"></div>
+    <div id="results"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    const bandsData = {
+        "255,1": { "B1": [11, 12, 13], "B3": [31, 32, 33], "B7": [71, 72, 73], "B8": [81, 82, 83], "B38": [61, 62, 63] },
+        "255,3": { "B1": [51, 52, 53], "B3": [31, 32, 33], "B7": [41, 42, 43], "B8": [21, 22, 23], "B40": [61, 62, 63] },
+        "255,6": { "B1": [12, 22, 32], "B3": [11, 21, 31], "B7": [13, 23, 33], "B8": [19, 29, 39] }
+    };
+
+    let map = null, markersLayer = L.layerGroup();
+
+    // Генерація чекбоксів при зміні оператора
+    document.getElementById('operator').addEventListener('change', function() {
+        const panel = document.getElementById('sectors-panel');
+        if (!this.value) {
+            panel.innerHTML = '<em style="color:#7f8c8d; font-size:13px;">Спочатку оберіть оператора</em>';
+            return;
+        }
+
+        const data = bandsData[this.value];
+        let html = `
+            <div style="margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #ddd;">
+                <a href="#" style="color: #2980b9; text-decoration: none; font-weight: bold; font-size: 14px;" onclick="toggleAllGlobal(true); return false;">✅ Вибрати всі</a>
+                <span style="color: #ccc; margin: 0 10px;">|</span>
+                <a href="#" style="color: #e74c3c; text-decoration: none; font-weight: bold; font-size: 14px;" onclick="toggleAllGlobal(false); return false;">❌ Зняти всі</a>
+            </div>
+        `;
+
+        for (let band in data) {
+            html += `<div class="band-group">
+                <div class="band-title">
+                    Діапазон ${band}
+                    <span class="action-links">
+                        <a onclick="toggleBand('${band}', true)">Всі</a> | 
+                        <a onclick="toggleBand('${band}', false)">Жодного</a>
+                    </span>
+                </div>
+                <div class="sector-checkboxes">`;
+            
+            data[band].forEach(sector => {
+                html += `
+                    <label class="sector-label">
+                        <input type="checkbox" class="sector-cb cb-${band}" value="${sector}" data-band="${band}" checked> 
+                        ${sector}
+                    </label>`;
+            });
+            html += `</div></div>`;
+        }
+        panel.innerHTML = html;
+    });
+
+    // Функції для керування галочками
+    function toggleAllGlobal(state) {
+        document.querySelectorAll('.sector-cb').forEach(cb => cb.checked = state);
+    }
+    function toggleBand(band, state) {
+        document.querySelectorAll(`.cb-${band}`).forEach(cb => cb.checked = state);
+    }
+
+    async function runRangeScan() {
+        const password = document.getElementById('appPassword').value;
+        const start = parseInt(document.getElementById('startEnodeb').value);
+        const end = parseInt(document.getElementById('endEnodeb').value);
+        const opVal = document.getElementById('operator').value;
+        
+        // Збираємо тільки ті сектори, де стоїть галочка
+        const checkedBoxes = document.querySelectorAll('.sector-cb:checked');
+
+        if (!password || isNaN(start) || isNaN(end) || !opVal) return alert("Заповніть всі текстові поля!");
+        if (checkedBoxes.length === 0) return alert("Оберіть хоча б один сектор для сканування!");
+        if (end < start) return alert("Кінцевий номер не може бути меншим за початковий!");
+        if (end - start > 50) return alert("Максимальний діапазон - 50 станцій за один раз!");
+
+        const [mcc, mnc] = opVal.split(',').map(Number);
+        
+        // Формуємо масив вибраних секторів
+        const selectedSectors = Array.from(checkedBoxes).map(cb => ({
+            band: cb.dataset.band,
+            sector: parseInt(cb.value)
+        }));
+
+        const btn = document.getElementById('scanBtn');
+        const status = document.getElementById('status-bar');
+        const results = document.getElementById('results');
+
+        btn.disabled = true;
+        status.style.display = 'block';
+        results.innerHTML = '';
+        initMapBase();
+
+        // Основний цикл сканування
+        for (let enb = start; enb <= end; enb++) {
+            status.innerHTML = `🔎 Сканування БС <b>${enb}</b> (${enb - start + 1} з ${end - start + 1})...`;
+            let bsCoords = [];
+
+            // Перебираємо тільки вибрані чекбокси
+            for (let item of selectedSectors) {
+                const cellId = (enb * 256) + item.sector;
+                try {
+                    const resp = await fetch('https://cell-backend-pih1.onrender.com/locate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password, cellId, mcc, mnc })
+                    });
+                    
+                    const d = await resp.json();
+                  await new Promise(r => setTimeout(r, 300));
+                    
+                    if (resp.ok) {
+                        const lat = d.location.lat, lng = d.location.lng;
+                        bsCoords.push({ lat, lng });
+                        addResultCard(enb, item.sector, item.band, lat, lng, results);
+                        L.circleMarker([lat, lng], { radius: 5, color: '#3498db' }).addTo(markersLayer).bindPopup(`БС ${enb} Сектор ${item.sector}`);
+                    }
+                } catch (e) { console.error("Помилка запиту для сектора", item.sector, e); }
+            }
+
+            // Якщо знайдено хоча б один сектор цієї БС, виводимо її центр
+            if (bsCoords.length > 0) {
+                const aLat = bsCoords.reduce((a, b) => a + b.lat, 0) / bsCoords.length;
+                const aLng = bsCoords.reduce((a, b) => a + b.lng, 0) / bsCoords.length;
+                addTowerSummary(enb, aLat, aLng, bsCoords.length, results);
+                L.marker([aLat, aLng]).addTo(markersLayer).bindPopup(`<b>БС ${enb} (Центр)</b>`);
+                map.flyTo([aLat, aLng], 13);
+            }
+        }
+
+        status.innerHTML = "✅ <b>Сканування успішно завершено!</b>";
+        btn.disabled = false;
+    }
+
+    function addResultCard(enb, s, band, lat, lng, container) {
+        container.innerHTML += `
+            <div class="result-card success">
+                БС <b>${enb}</b> | Сектор ${s} <span class="badge">${band}</span><br>
+                ${lat}, ${lng}
+            </div>`;
+    }
+
+    function addTowerSummary(enb, lat, lng, count, container) {
+        container.innerHTML += `
+            <div class="result-card tower-summary">
+                <b>📡 БС ${enb}</b> (Знайдено: ${count} сект.)<br>
+                Приблизний центр: ${lat.toFixed(6)}, ${lng.toFixed(6)}<br>
+                <a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" style="display:inline-block; margin-top:5px; color:#9b59b6; font-weight:bold;">Відкрити в Google Maps</a>
+            </div>`;
+    }
+
+    function initMapBase() {
+        document.getElementById('map-container').style.display = 'block';
+        if (!map) {
+            // Центр України за замовчуванням
+            map = L.map('map-container').setView([49.0, 31.0], 6);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+            markersLayer.addTo(map);
+        } else {
+            markersLayer.clearLayers();
+        }
+    }
+</script>
+</body>
+</html>
