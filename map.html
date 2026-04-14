@@ -10,12 +10,11 @@
         .sidebar { position: absolute; top: 10px; left: 50px; z-index: 1000; background: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); width: 300px; }
         h3 { margin-top: 0; margin-bottom: 15px; color: #2c3e50; text-align: center; }
         input[type="password"] { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { width: 100%; padding: 10px; background-color: #3498db; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        button { width: 100%; padding: 10px; background-color: #3498db; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; transition: 0.3s; }
         button:hover { background-color: #2980b9; }
         #map { width: 100vw; height: 100vh; }
         .stats { margin-top: 15px; font-size: 13px; color: #555; }
         
-        /* Кольорові крапки для легенди */
         .legend-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 5px; vertical-align: middle; border: 1px solid #000; }
         .bg-red { background-color: #e74c3c; }
         .bg-blue { background-color: #3498db; }
@@ -49,7 +48,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    // Ініціалізація порожньої карти (центр України)
     const map = L.map('map', { zoomControl: false }).setView([49.0, 31.0], 6);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -58,14 +56,12 @@
 
     let markersLayer = L.layerGroup().addTo(map);
 
-    // Довідник бендів (для розшифровки секторів)
     const bandsData = {
         "255,1": { "B1": [11,12,13], "B3": [31,32,33], "B7": [71,72,73], "B8": [81,82,83], "B38": [61,62,63] },
         "255,3": { "B1": [51,52,53], "B3": [31,32,33], "B7": [41,42,43], "B8": [21,22,23], "B40": [61,62,63] },
         "255,6": { "B1": [12,22,32], "B3": [11,21,31], "B7": [13,23,33], "B8": [19,29,39] }
     };
 
-    // Функція, яка визначає, якому бенду належить сектор
     function resolveBand(mnc, sector) {
         const opKey = `255,${mnc}`;
         const bands = bandsData[opKey];
@@ -85,7 +81,6 @@
         btn.textContent = "Завантаження...";
 
         try {
-            // Запит усіх даних з Google Sheets через ваш Render
             const resp = await fetch('https://cell-backend-pih1.onrender.com/all_towers', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -112,12 +107,17 @@
         markersLayer.clearLayers();
         const groupedBS = {};
 
-        // 1. Групуємо всі знайдені сектори у фізичні вежі (eNodeB)
         records.forEach(row => {
-            if (!row.CellID) return;
-            const enodeb = Math.floor(row.CellID / 256);
-            const sector = row.CellID % 256;
-            const opKey = `${row.MCC}_${row.MNC}_${enodeb}`; // Унікальний ключ вежі
+            // Гнучкий пошук колонок, щоб уникнути помилок регістру
+            const cID = row.CellID || row.cellid || row['Cell ID'];
+            const lat = row.Lat || row.lat;
+            const lng = row.Lng || row.lng;
+
+            if (!cID || !lat || !lng) return;
+
+            const enodeb = Math.floor(parseInt(cID) / 256);
+            const sector = parseInt(cID) % 256;
+            const opKey = `${row.MCC}_${row.MNC}_${enodeb}`;
             
             if (!groupedBS[opKey]) {
                 groupedBS[opKey] = {
@@ -131,8 +131,9 @@
                 };
             }
             
-            groupedBS[opKey].latSum += parseFloat(row.Lat);
-            groupedBS[opKey].lngSum += parseFloat(row.Lng);
+            // Примусове перетворення координат у числа
+            groupedBS[opKey].latSum += Number(lat);
+            groupedBS[opKey].lngSum += Number(lng);
             groupedBS[opKey].sectorCount += 1;
             groupedBS[opKey].bandsFound.add(resolveBand(row.MNC, sector));
         });
@@ -140,29 +141,29 @@
         let vfCount = 0, ksCount = 0, lcCount = 0;
         const bounds = [];
 
-        // 2. Рахуємо центри і малюємо маркери
         for (const key in groupedBS) {
             const bs = groupedBS[key];
             const centerLat = bs.latSum / bs.sectorCount;
             const centerLng = bs.lngSum / bs.sectorCount;
             
-            // Визначаємо колір і назву оператора
-            let markerColor = "#95a5a6"; // Сірий за замовчуванням
+            // Пропускаємо, якщо математика збилася
+            if (isNaN(centerLat) || isNaN(centerLng)) continue;
+
+            let markerColor = "#95a5a6"; 
             let opName = "Невідомий";
-            
+
             if (bs.mnc === 1) { markerColor = "#e74c3c"; opName = "Vodafone"; vfCount++; }
             else if (bs.mnc === 3) { markerColor = "#3498db"; opName = "Kyivstar"; ksCount++; }
             else if (bs.mnc === 6) { markerColor = "#f1c40f"; opName = "lifecell"; lcCount++; }
 
-            // Створюємо кастомну "шпильку" (маркер)
+            // Інлайн-стилі гарантують, що маркер відмалюється завжди
             const customIcon = L.divIcon({
                 className: 'custom-pin',
-                iconAnchor: [8, 8],
+                iconAnchor: [10, 10],
                 popupAnchor: [0, -10],
-                html: `<div style="background-color: ${markerColor}; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.5);"></div>`
+                html: `<div style="background-color: ${markerColor}; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.4);"></div>`
             });
 
-            // Формуємо текст спливаючого вікна
             const bandsArray = Array.from(bs.bandsFound).sort();
             const popupHtml = `
                 <div style="font-family: sans-serif; min-width: 150px;">
@@ -171,25 +172,23 @@
                     </h4>
                     <b>Знайдені бенди:</b> ${bandsArray.join(', ')}<br>
                     <b>К-сть секторів:</b> ${bs.sectorCount}<br>
-                    <a href="https://www.google.com/maps?q=$${centerLat},${centerLng}" target="_blank" style="display: block; margin-top: 8px; font-weight: bold; text-decoration: none;">Відкрити в Google Maps</a>
+                    <a href="https://www.google.com/maps?q=$$${centerLat},${centerLng}" target="_blank" style="display: block; margin-top: 8px; font-weight: bold; text-decoration: none;">Відкрити в Google Maps</a>
                 </div>
             `;
 
-            const marker = L.marker([centerLat, centerLng], { icon: customIcon })
+            L.marker([centerLat, centerLng], { icon: customIcon })
                 .bindPopup(popupHtml)
                 .addTo(markersLayer);
                 
             bounds.push([centerLat, centerLng]);
         }
 
-        // Оновлюємо статистику в панелі
         document.getElementById('stats-panel').style.display = 'block';
         document.getElementById('total-bs').innerText = Object.keys(groupedBS).length;
         document.getElementById('count-vf').innerText = vfCount;
         document.getElementById('count-ks').innerText = ksCount;
         document.getElementById('count-lc').innerText = lcCount;
 
-        // Автоматично наближаємо карту, щоб було видно всі точки
         if (bounds.length > 0) {
             map.fitBounds(bounds, { padding: [50, 50] });
         }
