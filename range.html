@@ -154,7 +154,7 @@
         const checkedBoxes = document.querySelectorAll('.sector-cb:checked');
 
         if (!password || isNaN(start) || isNaN(end) || !opVal) return alert("Заповніть всі поля!");
-        if (checkedBoxes.length === 0) return alert("Оберіть хоча б один сектор!");
+        if (checkedBoxes.length === 0) return alert("Оберіть сектори!");
 
         const [mcc, mnc] = opVal.split(',').map(Number);
         const selectedSectors = Array.from(checkedBoxes).map(cb => ({
@@ -169,10 +169,20 @@
         btn.disabled = true;
         status.style.display = 'block';
         results.innerHTML = '';
-        initMapBase();
+        
+        // Ініціалізація карти
+        document.getElementById('map-container').style.display = 'block';
+        if (!map) {
+            map = L.map('map-container').setView([49.0, 31.0], 6);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+            markersLayer.addTo(map);
+        } else {
+            markersLayer.clearLayers();
+        }
+        map.invalidateSize(); // ВИПРАВЛЕННЯ: оновлюємо розмір карти
 
         // 1. ЗАВАНТАЖЕННЯ БАЗИ
-        status.innerHTML = `⏳ Завантаження вашої бази...`;
+        status.innerHTML = `⏳ Завантаження бази для звірки...`;
         let localDB = {};
         try {
             const dbResp = await fetch('https://cell-backend-pih1.onrender.com/all_towers', {
@@ -191,7 +201,7 @@
             }
         } catch(e) { console.error(e); }
 
-        // 2. ЦИКЛ
+        // 2. СКАНУВАННЯ
         for (let enb = start; enb <= end; enb++) {
             status.innerHTML = `🔎 БС <b>${enb}</b> (${enb - start + 1} з ${end - start + 1})...`;
             let bsCoords = [];
@@ -202,9 +212,9 @@
                 const cellId = (enb * 256) + item.sector;
 
                 if (localDB[cellId]) {
-                    // ВАЖЛИВО: Перетворюємо в числа відразу
-                    const lat = Number(localDB[cellId].lat);
-                    const lng = Number(localDB[cellId].lng);
+                    // ГАРАНТОВАНЕ ПЕРЕТВОРЕННЯ В ЧИСЛО
+                    const lat = parseFloat(localDB[cellId].lat);
+                    const lng = parseFloat(localDB[cellId].lng);
                     
                     if (!isNaN(lat) && !isNaN(lng)) {
                         bsCoords.push({ lat, lng });
@@ -213,7 +223,7 @@
                     }
                 } else {
                     try {
-                        await new Promise(r => setTimeout(r, 400));
+                        await new Promise(r => setTimeout(r, 450));
                         const resp = await fetch('https://cell-backend-pih1.onrender.com/locate', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -221,8 +231,8 @@
                         });
                         const d = await resp.json();
                         if (resp.ok) {
-                            const lat = Number(d.location.lat);
-                            const lng = Number(d.location.lng);
+                            const lat = parseFloat(d.location.lat);
+                            const lng = parseFloat(d.location.lng);
                             bsCoords.push({ lat, lng });
                             addResultCard(enb, item.sector, item.band, lat, lng, results);
                             L.circleMarker([lat, lng], { radius: 6, color: '#3498db', fillOpacity: 0.8 }).addTo(markersLayer);
@@ -233,7 +243,7 @@
                 }
             }
 
-            // ПЕРЕВІРКА TELEGRAM
+            // TELEGRAM ПЕРЕВІРКА
             if (newSectorsCount > 0) {
                 fetch('https://cell-backend-pih1.onrender.com/notify_telegram', {
                     method: 'POST',
@@ -246,19 +256,21 @@
                 });
             }
 
-            // ВІДОБРАЖЕННЯ ВЕЖІ (Виправлено зум)
+            // МАЛЮЄМО ВЕЖУ (Середнє арифметичне)
             if (bsCoords.length > 0) {
-                const aLat = bsCoords.reduce((a, b) => a + b.lat, 0) / bsCoords.length;
-                const aLng = bsCoords.reduce((a, b) => a + b.lng, 0) / bsCoords.length;
+                let sumLat = 0, sumLng = 0;
+                bsCoords.forEach(c => { sumLat += c.lat; sumLng += c.lng; });
+                const aLat = sumLat / bsCoords.length;
+                const aLng = sumLng / bsCoords.length;
                 
                 if (!isNaN(aLat) && !isNaN(aLng)) {
                     addTowerSummary(enb, aLat, aLng, bsCoords.length, results);
                     L.marker([aLat, aLng]).addTo(markersLayer).bindPopup(`БС ${enb}`);
-                    map.setView([aLat, aLng], 14); // Замість flyTo для стабільності
+                    map.setView([aLat, aLng], 14);
                 }
             }
         }
-        status.innerHTML = "✅ Готово!";
+        status.innerHTML = "✅ Сканування завершено!";
         btn.disabled = false;
     }
 
