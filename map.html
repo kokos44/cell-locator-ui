@@ -106,56 +106,43 @@
     function processAndRenderMap(records) {
         markersLayer.clearLayers();
         const groupedBS = {};
+        const bounds = [];
 
         records.forEach(row => {
-            // Гнучкий пошук колонок, щоб уникнути помилок регістру
             const cID = row.CellID || row.cellid || row['Cell ID'];
-            const lat = row.Lat || row.lat;
-            const lng = row.Lng || row.lng;
+            // ВАЖЛИВО: parseFloat гарантує, що ми не склеюємо рядки
+            const lat = parseFloat(row.Lat || row.lat);
+            const lng = parseFloat(row.Lng || row.lng);
 
-            if (!cID || !lat || !lng) return;
+            if (!cID || isNaN(lat) || isNaN(lng)) return;
 
             const enodeb = Math.floor(parseInt(cID) / 256);
             const sector = parseInt(cID) % 256;
             const opKey = `${row.MCC}_${row.MNC}_${enodeb}`;
             
             if (!groupedBS[opKey]) {
-                groupedBS[opKey] = {
-                    enodeb: enodeb,
-                    mcc: row.MCC,
-                    mnc: row.MNC,
-                    latSum: 0,
-                    lngSum: 0,
-                    sectorCount: 0,
-                    bandsFound: new Set()
-                };
+                groupedBS[opKey] = { enodeb, mcc: row.MCC, mnc: row.MNC, latSum: 0, lngSum: 0, count: 0, bands: new Set() };
             }
             
-            // Примусове перетворення координат у числа
-            groupedBS[opKey].latSum += Number(lat);
-            groupedBS[opKey].lngSum += Number(lng);
-            groupedBS[opKey].sectorCount += 1;
-            groupedBS[opKey].bandsFound.add(resolveBand(row.MNC, sector));
+            groupedBS[opKey].latSum += lat;
+            groupedBS[opKey].lngSum += lng;
+            groupedBS[opKey].count += 1;
+            groupedBS[opKey].bands.add(resolveBand(row.MNC, sector));
         });
-
-        let vfCount = 0, ksCount = 0, lcCount = 0;
-        const bounds = [];
 
         for (const key in groupedBS) {
             const bs = groupedBS[key];
-            const centerLat = bs.latSum / bs.sectorCount;
-            const centerLng = bs.lngSum / bs.sectorCount;
-            
-            if (isNaN(centerLat) || isNaN(centerLng)) continue;
+            const cLat = bs.latSum / bs.count;
+            const cLng = bs.lngSum / bs.count;
 
-            // Спробуємо стандартний маркер замість divIcon для тесту
-            const marker = L.marker([centerLat, centerLng]).addTo(markersLayer);
-            
-            const bandsArray = Array.from(bs.bandsFound).sort();
-            marker.bindPopup(`<b>БС ${bs.enodeb}</b><br>Бенди: ${bandsArray.join(', ')}`);
-                
-            bounds.push([centerLat, centerLng]);
+            const marker = L.marker([cLat, cLng]).addTo(markersLayer);
+            const bands = Array.from(bs.bands).sort().join(', ');
+            marker.bindPopup(`<b>БС ${bs.enodeb}</b><br>Оператор MNC: ${bs.mnc}<br>Бенди: ${bands}`);
+            bounds.push([cLat, cLng]);
         }
+
+        if (bounds.length > 0) map.fitBounds(bounds, { padding: [50, 50] });
+    }
 
         document.getElementById('stats-panel').style.display = 'block';
         document.getElementById('total-bs').innerText = Object.keys(groupedBS).length;
