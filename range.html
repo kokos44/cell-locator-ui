@@ -151,8 +151,6 @@
         const start = parseInt(document.getElementById('startEnodeb').value);
         const end = parseInt(document.getElementById('endEnodeb').value);
         const opVal = document.getElementById('operator').value;
-        
-        // Збираємо тільки ті сектори, де стоїть галочка
         const checkedBoxes = document.querySelectorAll('.sector-cb:checked');
 
         if (!password || isNaN(start) || isNaN(end) || !opVal) return alert("Заповніть всі текстові поля!");
@@ -161,8 +159,6 @@
         if (end - start > 50) return alert("Максимальний діапазон - 50 станцій за один раз!");
 
         const [mcc, mnc] = opVal.split(',').map(Number);
-        
-        // Формуємо масив вибраних секторів
         const selectedSectors = Array.from(checkedBoxes).map(cb => ({
             band: cb.dataset.band,
             sector: parseInt(cb.value)
@@ -177,12 +173,15 @@
         results.innerHTML = '';
         initMapBase();
 
-        // Основний цикл сканування
+        // Основний цикл
         for (let enb = start; enb <= end; enb++) {
             status.innerHTML = `🔎 Сканування БС <b>${enb}</b> (${enb - start + 1} з ${end - start + 1})...`;
             let bsCoords = [];
+            
+            // Змінні для трекінгу Telegram
+            let newSectorsCount = 0;
+            let newBands = new Set();
 
-            // Перебираємо тільки вибрані чекбокси
             for (let item of selectedSectors) {
                 const cellId = (enb * 256) + item.sector;
                 try {
@@ -193,18 +192,41 @@
                     });
                     
                     const d = await resp.json();
-                  await new Promise(r => setTimeout(r, 300));
                     
                     if (resp.ok) {
                         const lat = d.location.lat, lng = d.location.lng;
                         bsCoords.push({ lat, lng });
                         addResultCard(enb, item.sector, item.band, lat, lng, results);
                         L.circleMarker([lat, lng], { radius: 5, color: '#3498db' }).addTo(markersLayer).bindPopup(`БС ${enb} Сектор ${item.sector}`);
+                        
+                        // Якщо джерело "google", значить цього сектора раніше не було
+                        if (d.source === "google") {
+                            newSectorsCount++;
+                            newBands.add(item.band);
+                        }
                     }
-                } catch (e) { console.error("Помилка запиту для сектора", item.sector, e); }
+                } catch (e) { console.error("Помилка запиту", item.sector, e); }
             }
 
-            // Якщо знайдено хоча б один сектор цієї БС, виводимо її центр
+            // Якщо ми знайшли хоча б один НОВИЙ сектор для цієї БС, відправляємо звіт у Telegram
+            if (newSectorsCount > 0) {
+                try {
+                    await fetch('https://cell-backend-pih1.onrender.com/notify_telegram', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            password: password,
+                            mcc: mcc,
+                            mnc: mnc,
+                            enodeb: enb,
+                            new_sectors_count: newSectorsCount,
+                            new_bands: Array.from(newBands)
+                        })
+                    });
+                } catch (e) { console.error("Помилка відправки Telegram", e); }
+            }
+
+            // Виводимо фінальну картку
             if (bsCoords.length > 0) {
                 const aLat = bsCoords.reduce((a, b) => a + b.lat, 0) / bsCoords.length;
                 const aLng = bsCoords.reduce((a, b) => a + b.lng, 0) / bsCoords.length;
