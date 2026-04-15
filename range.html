@@ -173,42 +173,81 @@
         results.innerHTML = '';
         initMapBase();
 
-        // Основний цикл
+        // 1. ЗАВАНТАЖЕННЯ ЛОКАЛЬНОЇ БАЗИ (Щоб не робити зайвих запитів)
+        status.innerHTML = `⏳ <b>Крок 1:</b> Завантаження вашої бази для звірки...`;
+        let localDB = {};
+        try {
+            const dbResp = await fetch('https://cell-backend-pih1.onrender.com/all_towers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: password })
+            });
+            if (dbResp.ok) {
+                const dbData = await dbResp.json();
+                dbData.towers.forEach(row => {
+                    const cid = row.CellID || row.cellid || row['Cell ID'];
+                    if (cid && row.MCC == mcc && row.MNC == mnc) {
+                        localDB[cid] = { lat: row.Lat || row.lat, lng: row.Lng || row.lng };
+                    }
+                });
+            }
+        } catch(e) {
+            console.error("Не вдалося завантажити базу", e);
+        }
+
+        // 2. ОСНОВНИЙ ЦИКЛ СКАНУВАННЯ
         for (let enb = start; enb <= end; enb++) {
-            status.innerHTML = `🔎 Сканування БС <b>${enb}</b> (${enb - start + 1} з ${end - start + 1})...`;
+            status.innerHTML = `🔎 <b>Крок 2:</b> Сканування БС <b>${enb}</b> (${enb - start + 1} з ${end - start + 1})...`;
             let bsCoords = [];
-            
-            // Змінні для трекінгу Telegram
             let newSectorsCount = 0;
             let newBands = new Set();
 
             for (let item of selectedSectors) {
                 const cellId = (enb * 256) + item.sector;
-                try {
-                    const resp = await fetch('https://cell-backend-pih1.onrender.com/locate', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ password, cellId, mcc, mnc })
-                    });
+
+                if (localDB[cellId]) {
+                    // ЯКЩО СЕКТОР ВЖЕ Є В БАЗІ: Не робимо запит до сервера!
+                    const lat = Number(localDB[cellId].lat);
+                    const lng = Number(localDB[cellId].lng);
+                    bsCoords.push({ lat, lng });
                     
-                    const d = await resp.json();
+                    // Малюємо картку без координат
+                    addResultCardCached(enb, item.sector, item.band, results);
                     
-                    if (resp.ok) {
-                        const lat = d.location.lat, lng = d.location.lng;
-                        bsCoords.push({ lat, lng });
-                        addResultCard(enb, item.sector, item.band, lat, lng, results);
-                        L.circleMarker([lat, lng], { radius: 5, color: '#3498db' }).addTo(markersLayer).bindPopup(`БС ${enb} Сектор ${item.sector}`);
+                    // На карті позначаємо сірим кольором
+                    L.circleMarker([lat, lng], { radius: 5, color: '#95a5a6', opacity: 0.5 }).addTo(markersLayer).bindPopup(`БС ${enb} Сектор ${item.sector} (З бази)`);
+                } else {
+                    // ЯКЩО СЕКТОРА НЕМАЄ: Робимо запит до Google
+                    try {
+                        // Штучна пауза 0.4 сек, щоб Google не заблокував за швидкість
+                        await new Promise(r => setTimeout(r, 400));
+
+                        const resp = await fetch('https://cell-backend-pih1.onrender.com/locate', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password, cellId, mcc, mnc })
+                        });
                         
-                        // Якщо джерело "google", значить цього сектора раніше не було
-                        if (d.source === "google") {
+                        const d = await resp.json();
+                        
+                        if (resp.ok) {
+                            const lat = d.location.lat, lng = d.location.lng;
+                            bsCoords.push({ lat, lng });
+                            
+                            // Малюємо зелену картку З КООРДИНАТАМИ
+                            addResultCard(enb, item.sector, item.band, lat, lng, results);
+                            
+                            // На карті позначаємо яскравим синім кольором
+                            L.circleMarker([lat, lng], { radius: 6, color: '#3498db', fillOpacity: 0.8 }).addTo(markersLayer).bindPopup(`<b>БС ${enb} Сектор ${item.sector} (НОВИЙ)</b>`);
+                            
                             newSectorsCount++;
                             newBands.add(item.band);
                         }
-                    }
-                } catch (e) { console.error("Помилка запиту", item.sector, e); }
+                    } catch (e) { console.error("Помилка запиту", item.sector, e); }
+                }
             }
 
-            // Якщо ми знайшли хоча б один НОВИЙ сектор для цієї БС, відправляємо звіт у Telegram
+            // ВІДПРАВКА В TELEGRAM (Тільки якщо є НОВІ знахідки)
             if (newSectorsCount > 0) {
                 try {
                     await fetch('https://cell-backend-pih1.onrender.com/notify_telegram', {
@@ -226,7 +265,7 @@
                 } catch (e) { console.error("Помилка відправки Telegram", e); }
             }
 
-            // Виводимо фінальну картку
+            // Малюємо підсумкову вежу
             if (bsCoords.length > 0) {
                 const aLat = bsCoords.reduce((a, b) => a + b.lat, 0) / bsCoords.length;
                 const aLng = bsCoords.reduce((a, b) => a + b.lng, 0) / bsCoords.length;
@@ -238,6 +277,32 @@
 
         status.innerHTML = "✅ <b>Сканування успішно завершено!</b>";
         btn.disabled = false;
+    }
+
+    // НОВА ФУНКЦІЯ: Картка для секторів, що вже є в базі
+    function addResultCardCached(enb, s, band, container) {
+        container.innerHTML += `
+            <div class="result-card" style="border-left-color: #f1c40f; background: #fdfae6; color: #7f8c8d;">
+                БС <b>${enb}</b> | Сектор ${s} <span class="badge" style="background: #95a5a6;">${band}</span><br>
+                <em>Вже є в базі (Already found)</em>
+            </div>`;
+    }
+
+    function addResultCard(enb, s, band, lat, lng, container) {
+        container.innerHTML += `
+            <div class="result-card success">
+                БС <b>${enb}</b> | Сектор ${s} <span class="badge">${band}</span><br>
+                ${lat}, ${lng}
+            </div>`;
+    }
+
+    function addTowerSummary(enb, lat, lng, count, container) {
+        container.innerHTML += `
+            <div class="result-card tower-summary">
+                <b>📡 БС ${enb}</b> (Знайдено: ${count} сект.)<br>
+                Приблизний центр: ${lat.toFixed(6)}, ${lng.toFixed(6)}<br>
+                <a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" style="display:inline-block; margin-top:5px; color:#9b59b6; font-weight:bold;">Відкрити в Google Maps</a>
+            </div>`;
     }
 
     function addResultCard(enb, s, band, lat, lng, container) {
