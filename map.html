@@ -146,39 +146,13 @@
             const centerLat = bs.latSum / bs.sectorCount;
             const centerLng = bs.lngSum / bs.sectorCount;
             
-            // Пропускаємо, якщо математика збилася
             if (isNaN(centerLat) || isNaN(centerLng)) continue;
 
-            let markerColor = "#95a5a6"; 
-            let opName = "Невідомий";
-
-            if (bs.mnc === 1) { markerColor = "#e74c3c"; opName = "Vodafone"; vfCount++; }
-            else if (bs.mnc === 3) { markerColor = "#3498db"; opName = "Kyivstar"; ksCount++; }
-            else if (bs.mnc === 6) { markerColor = "#f1c40f"; opName = "lifecell"; lcCount++; }
-
-            // Інлайн-стилі гарантують, що маркер відмалюється завжди
-            const customIcon = L.divIcon({
-                className: 'custom-pin',
-                iconAnchor: [10, 10],
-                popupAnchor: [0, -10],
-                html: `<div style="background-color: ${markerColor}; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.4);"></div>`
-            });
-
+            // Спробуємо стандартний маркер замість divIcon для тесту
+            const marker = L.marker([centerLat, centerLng]).addTo(markersLayer);
+            
             const bandsArray = Array.from(bs.bandsFound).sort();
-            const popupHtml = `
-                <div style="font-family: sans-serif; min-width: 150px;">
-                    <h4 style="margin: 0 0 5px 0; color: ${markerColor}; border-bottom: 1px solid #ccc; padding-bottom: 5px;">
-                        ${opName} БС ${bs.enodeb}
-                    </h4>
-                    <b>Знайдені бенди:</b> ${bandsArray.join(', ')}<br>
-                    <b>К-сть секторів:</b> ${bs.sectorCount}<br>
-                    <a href="https://www.google.com/maps?q=$$${centerLat},${centerLng}" target="_blank" style="display: block; margin-top: 8px; font-weight: bold; text-decoration: none;">Відкрити в Google Maps</a>
-                </div>
-            `;
-
-            L.marker([centerLat, centerLng], { icon: customIcon })
-                .bindPopup(popupHtml)
-                .addTo(markersLayer);
+            marker.bindPopup(`<b>БС ${bs.enodeb}</b><br>Бенди: ${bandsArray.join(', ')}`);
                 
             bounds.push([centerLat, centerLng]);
         }
