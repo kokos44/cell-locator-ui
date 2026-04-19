@@ -99,6 +99,7 @@
     let map = null, markersLayer = L.layerGroup();
     let isScanning = false;
 
+    // Генерація чекбоксів при зміні оператора
     document.getElementById('operator').addEventListener('change', function() {
         const panel = document.getElementById('sectors-panel');
         if (!this.value) {
@@ -120,8 +121,8 @@
                 <div class="band-title">
                     Діапазон ${band}
                     <span class="action-links">
-                        <a onclick="toggleBand('${band}', true)">Всі</a> | 
-                        <a onclick="toggleBand('${band}', false)">Жодного</a>
+                        <a href="#" onclick="toggleBand('${band}', true); return false;">Всі</a> | 
+                        <a href="#" onclick="toggleBand('${band}', false); return false;">Жодного</a>
                     </span>
                 </div>
                 <div class="sector-checkboxes">`;
@@ -200,11 +201,4 @@
         container.innerHTML += `
             <div class="result-card tower-summary">
                 <b>📡 БС ${enb}</b> (Знайдено: ${count} сект.)<br>
-                Приблизний центр: ${lat.toFixed(6)}, ${lng.toFixed(6)}<br>
-                <a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" style="display:inline-block; margin-top:5px; color:#9b59b6; font-weight:bold;">Відкрити в Google Maps</a>
-            </div>`;
-    }
-
-    async function runRangeScan() {
-        const password = document.getElementById('appPassword').value;
-        const start = parseInt(
+                Приблизний центр: ${lat.toFixed(6)}, ${lng.toFixed(6)}
