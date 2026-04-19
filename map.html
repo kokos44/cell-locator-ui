@@ -4,7 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Глобальна Карта БС</title>
+    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f4f7f6; }
         .sidebar { position: absolute; top: 10px; left: 50px; z-index: 1000; background: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); width: 300px; }
@@ -47,6 +52,8 @@
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
 <script>
     const map = L.map('map', { zoomControl: false }).setView([49.0, 31.0], 6);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -54,7 +61,23 @@
         attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    let markersLayer = L.layerGroup().addTo(map);
+    // Створюємо окремі кластерні групи для кожного оператора
+    const vfCluster = L.markerClusterGroup({ chunkedLoading: true });
+    const ksCluster = L.markerClusterGroup({ chunkedLoading: true });
+    const lcCluster = L.markerClusterGroup({ chunkedLoading: true });
+
+    // Додаємо їх на карту за замовчуванням
+    map.addLayer(vfCluster);
+    map.addLayer(ksCluster);
+    map.addLayer(lcCluster);
+
+    // Створюємо меню для увімкнення/вимкнення операторів (з'явиться в правому верхньому куті)
+    const overlayMaps = {
+        "<span style='color:#e74c3c; font-weight:bold;'>Vodafone</span>": vfCluster,
+        "<span style='color:#3498db; font-weight:bold;'>Kyivstar</span>": ksCluster,
+        "<span style='color:#f1c40f; font-weight:bold; text-shadow: 1px 1px 1px #000;'>lifecell</span>": lcCluster
+    };
+    L.control.layers(null, overlayMaps, { collapsed: false }).addTo(map);
 
     const bandsData = {
         "255,1": { "B1": [11,12,13], "B3": [31,32,33], "B7": [71,72,73], "B8": [81,82,83], "B38": [61,62,63] },
@@ -111,13 +134,17 @@
         if (Math.abs(n) > 100) {
             let cleanStr = String(Math.floor(Math.abs(n)));
             n = parseFloat(cleanStr.substring(0, 2) + '.' + cleanStr.substring(2));
-            if (s.includes('-')) n = -n; // Відновлюємо мінус, якщо він був
+            if (s.includes('-')) n = -n;
         }
         return n;
     }
 
     function processAndRenderMap(records) {
-        markersLayer.clearLayers();
+        // Очищаємо всі кластери перед новим завантаженням
+        vfCluster.clearLayers();
+        ksCluster.clearLayers();
+        lcCluster.clearLayers();
+        
         const groupedBS = {};
         const bounds = [];
         let vfCount = 0, ksCount = 0, lcCount = 0;
@@ -125,7 +152,6 @@
         records.forEach(row => {
             const cID = row.CellID || row.cellid || row['Cell ID'];
             
-            // ПРОПУСКАЄМО ЧЕРЕЗ ФІЛЬТР
             const lat = fixCoord(row.Lat || row.lat);
             const lng = fixCoord(row.Lng || row.lng);
 
@@ -145,6 +171,9 @@
             groupedBS[opKey].bands.add(resolveBand(row.MNC, sector));
         });
 
+        // Масиви для тимчасового зберігання маркерів (оптимізує додавання в кластер)
+        const vfMarkers = [], ksMarkers = [], lcMarkers = [];
+
         for (const key in groupedBS) {
             const bs = groupedBS[key];
             const cLat = bs.latSum / bs.count;
@@ -154,6 +183,7 @@
 
             let markerColor = "#95a5a6"; 
             let opName = "Невідомий";
+            
             if (bs.mnc === 1) { markerColor = "#e74c3c"; opName = "Vodafone"; vfCount++; }
             else if (bs.mnc === 3) { markerColor = "#3498db"; opName = "Kyivstar"; ksCount++; }
             else if (bs.mnc === 6) { markerColor = "#f1c40f"; opName = "lifecell"; lcCount++; }
@@ -166,10 +196,21 @@
             });
 
             const bandsArray = Array.from(bs.bands).sort();
-            const marker = L.marker([cLat, cLng], { icon: customIcon }).addTo(markersLayer);
+            const marker = L.marker([cLat, cLng], { icon: customIcon });
             marker.bindPopup(`<b>${opName} БС ${bs.enodeb}</b><br>Бенди: ${bandsArray.join(', ')}`);
+            
+            // Розподіляємо маркери по відповідних масивах
+            if (bs.mnc === 1) vfMarkers.push(marker);
+            else if (bs.mnc === 3) ksMarkers.push(marker);
+            else if (bs.mnc === 6) lcMarkers.push(marker);
+
             bounds.push([cLat, cLng]);
         }
+
+        // Додаємо масиви маркерів у відповідні кластери (одним махом для швидкості)
+        vfCluster.addLayers(vfMarkers);
+        ksCluster.addLayers(ksMarkers);
+        lcCluster.addLayers(lcMarkers);
 
         document.getElementById('stats-panel').style.display = 'block';
         document.getElementById('total-bs').innerText = Object.keys(groupedBS).length;
