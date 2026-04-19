@@ -103,16 +103,30 @@
         btn.textContent = "Оновити базу";
     }
 
+    function fixCoord(val) {
+        if (!val) return NaN;
+        let s = String(val).replace(/,/g, '.').replace(/\s/g, '');
+        let n = parseFloat(s);
+        if (isNaN(n)) return NaN;
+        if (Math.abs(n) > 100) {
+            let cleanStr = String(Math.floor(Math.abs(n)));
+            n = parseFloat(cleanStr.substring(0, 2) + '.' + cleanStr.substring(2));
+        }
+        return n;
+    }
+
     function processAndRenderMap(records) {
         markersLayer.clearLayers();
         const groupedBS = {};
         const bounds = [];
+        let vfCount = 0, ksCount = 0, lcCount = 0;
 
         records.forEach(row => {
             const cID = row.CellID || row.cellid || row['Cell ID'];
-            // ВАЖЛИВО: parseFloat гарантує, що ми не склеюємо рядки
-            const lat = parseFloat(row.Lat || row.lat);
-            const lng = parseFloat(row.Lng || row.lng);
+            
+            // ПРОПУСКАЄМО ЧЕРЕЗ ФІЛЬТР
+            const lat = fixCoord(row.Lat || row.lat);
+            const lng = fixCoord(row.Lng || row.lng);
 
             if (!cID || isNaN(lat) || isNaN(lng)) return;
 
@@ -135,14 +149,26 @@
             const cLat = bs.latSum / bs.count;
             const cLng = bs.lngSum / bs.count;
 
-            const marker = L.marker([cLat, cLng]).addTo(markersLayer);
-            const bands = Array.from(bs.bands).sort().join(', ');
-            marker.bindPopup(`<b>БС ${bs.enodeb}</b><br>Оператор MNC: ${bs.mnc}<br>Бенди: ${bands}`);
+            if (isNaN(cLat) || isNaN(cLng)) continue;
+
+            let markerColor = "#95a5a6"; 
+            let opName = "Невідомий";
+            if (bs.mnc === 1) { markerColor = "#e74c3c"; opName = "Vodafone"; vfCount++; }
+            else if (bs.mnc === 3) { markerColor = "#3498db"; opName = "Kyivstar"; ksCount++; }
+            else if (bs.mnc === 6) { markerColor = "#f1c40f"; opName = "lifecell"; lcCount++; }
+
+            const customIcon = L.divIcon({
+                className: 'custom-pin',
+                iconAnchor: [10, 10],
+                popupAnchor: [0, -10],
+                html: `<div style="background-color: ${markerColor}; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.4);"></div>`
+            });
+
+            const bandsArray = Array.from(bs.bands).sort();
+            const marker = L.marker([cLat, cLng], { icon: customIcon }).addTo(markersLayer);
+            marker.bindPopup(`<b>${opName} БС ${bs.enodeb}</b><br>Бенди: ${bandsArray.join(', ')}`);
             bounds.push([cLat, cLng]);
         }
-
-        if (bounds.length > 0) map.fitBounds(bounds, { padding: [50, 50] });
-    }
 
         document.getElementById('stats-panel').style.display = 'block';
         document.getElementById('total-bs').innerText = Object.keys(groupedBS).length;
@@ -150,9 +176,9 @@
         document.getElementById('count-ks').innerText = ksCount;
         document.getElementById('count-lc').innerText = lcCount;
 
-        if (bounds.length > 0) {
-            map.fitBounds(bounds, { padding: [50, 50] });
-        }
+        // Тепер bounds містить лише правильні координати, і карта масштабується ідеально
+        if (bounds.length > 0) map.fitBounds(bounds, { padding: [50, 50] });
+    }
     }
 </script>
 
