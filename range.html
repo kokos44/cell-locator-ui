@@ -170,7 +170,6 @@
         status.style.display = 'block';
         results.innerHTML = '';
         
-        // Ініціалізація карти
         document.getElementById('map-container').style.display = 'block';
         if (!map) {
             map = L.map('map-container').setView([49.0, 31.0], 6);
@@ -179,10 +178,9 @@
         } else {
             markersLayer.clearLayers();
         }
-        map.invalidateSize(); // ВИПРАВЛЕННЯ: оновлюємо розмір карти
+        map.invalidateSize();
 
-        // 1. ЗАВАНТАЖЕННЯ БАЗИ
-        status.innerHTML = `⏳ Завантаження бази для звірки...`;
+        status.innerHTML = `⏳ Завантаження бази...`;
         let localDB = {};
         try {
             const dbResp = await fetch('https://cell-backend-pih1.onrender.com/all_towers', {
@@ -201,7 +199,6 @@
             }
         } catch(e) { console.error(e); }
 
-        // 2. СКАНУВАННЯ
         for (let enb = start; enb <= end; enb++) {
             status.innerHTML = `🔎 БС <b>${enb}</b> (${enb - start + 1} з ${end - start + 1})...`;
             let bsCoords = [];
@@ -212,9 +209,9 @@
                 const cellId = (enb * 256) + item.sector;
 
                 if (localDB[cellId]) {
-                    // ГАРАНТОВАНЕ ПЕРЕТВОРЕННЯ В ЧИСЛО
-                    const lat = parseFloat(localDB[cellId].lat);
-                    const lng = parseFloat(localDB[cellId].lng);
+                    // ВИКОРИСТОВУЄМО НАШ РОЗУМНИЙ ФІЛЬТР
+                    const lat = fixCoord(localDB[cellId].lat);
+                    const lng = fixCoord(localDB[cellId].lng);
                     
                     if (!isNaN(lat) && !isNaN(lng)) {
                         bsCoords.push({ lat, lng });
@@ -231,8 +228,8 @@
                         });
                         const d = await resp.json();
                         if (resp.ok) {
-                            const lat = parseFloat(d.location.lat);
-                            const lng = parseFloat(d.location.lng);
+                            const lat = fixCoord(d.location.lat);
+                            const lng = fixCoord(d.location.lng);
                             bsCoords.push({ lat, lng });
                             addResultCard(enb, item.sector, item.band, lat, lng, results);
                             L.circleMarker([lat, lng], { radius: 6, color: '#3498db', fillOpacity: 0.8 }).addTo(markersLayer);
@@ -243,20 +240,14 @@
                 }
             }
 
-            // TELEGRAM ПЕРЕВІРКА
             if (newSectorsCount > 0) {
                 fetch('https://cell-backend-pih1.onrender.com/notify_telegram', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        password: password, mcc, mnc, enodeb: enb,
-                        new_sectors_count: newSectorsCount,
-                        new_bands: Array.from(newBands)
-                    })
+                    body: JSON.stringify({ password, mcc, mnc, enodeb: enb, new_sectors_count: newSectorsCount, new_bands: Array.from(newBands) })
                 });
             }
 
-            // МАЛЮЄМО ВЕЖУ (Середнє арифметичне)
             if (bsCoords.length > 0) {
                 let sumLat = 0, sumLng = 0;
                 bsCoords.forEach(c => { sumLat += c.lat; sumLng += c.lng; });
@@ -272,6 +263,23 @@
         }
         status.innerHTML = "✅ Сканування завершено!";
         btn.disabled = false;
+    }
+
+    function fixCoord(val) {
+        if (val === undefined || val === null || val === '') return NaN;
+        // Замінюємо кому на крапку і прибираємо випадкові пробіли
+        let s = String(val).replace(/,/g, '.').replace(/\s/g, '');
+        let n = parseFloat(s);
+        if (isNaN(n)) return NaN;
+        
+        // Якщо число неадекватно велике (> 100) - Google Sheets з'їв крапку!
+        // Повертаємо її примусово після перших двох цифр.
+        if (Math.abs(n) > 100) {
+            let cleanStr = String(Math.floor(Math.abs(n)));
+            n = parseFloat(cleanStr.substring(0, 2) + '.' + cleanStr.substring(2));
+            if (s.includes('-')) n = -n;
+        }
+        return n;
     }
 
     // НОВА ФУНКЦІЯ: Картка для секторів, що вже є в базі
