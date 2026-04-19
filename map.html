@@ -104,13 +104,14 @@
     }
 
     function fixCoord(val) {
-        if (!val) return NaN;
+        if (val === undefined || val === null || val === '') return NaN;
         let s = String(val).replace(/,/g, '.').replace(/\s/g, '');
         let n = parseFloat(s);
         if (isNaN(n)) return NaN;
         if (Math.abs(n) > 100) {
             let cleanStr = String(Math.floor(Math.abs(n)));
             n = parseFloat(cleanStr.substring(0, 2) + '.' + cleanStr.substring(2));
+            if (s.includes('-')) n = -n; // Відновлюємо мінус, якщо він був
         }
         return n;
     }
@@ -176,9 +177,7 @@
         document.getElementById('count-ks').innerText = ksCount;
         document.getElementById('count-lc').innerText = lcCount;
 
-        // Тепер bounds містить лише правильні координати, і карта масштабується ідеально
         if (bounds.length > 0) map.fitBounds(bounds, { padding: [50, 50] });
-    }
     }
 </script>
 
