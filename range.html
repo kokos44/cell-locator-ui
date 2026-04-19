@@ -149,4 +149,162 @@
     function fixCoord(val) {
         if (val === undefined || val === null || val === '') return NaN;
         let s = String(val).replace(/,/g, '.').replace(/\s/g, '');
-        let n
+        let n = parseFloat(s);
+        if (isNaN(n)) return NaN;
+        if (Math.abs(n) > 100) {
+            let cleanStr = String(Math.floor(Math.abs(n)));
+            n = parseFloat(cleanStr.substring(0, 2) + '.' + cleanStr.substring(2));
+            if (s.includes('-')) n = -n;
+        }
+        return n;
+    }
+
+    function addResultCardCached(enb, s, band, container) {
+        container.innerHTML += `
+            <div class="result-card" style="border-left-color: #f1c40f; background: #fdfae6; color: #7f8c8d;">
+                БС <b>${enb}</b> | Сектор ${s} <span class="badge" style="background: #95a5a6;">${band}</span><br>
+                <em>Вже є в базі (Already found)</em>
+            </div>`;
+    }
+
+    function addResultCard(enb, s, band, lat, lng, container) {
+        container.innerHTML += `
+            <div class="result-card success">
+                БС <b>${enb}</b> | Сектор ${s} <span class="badge">${band}</span><br>
+                ${lat}, ${lng}
+            </div>`;
+    }
+
+    function addTowerSummary(enb, lat, lng, count, container) {
+        container.innerHTML += `
+            <div class="result-card tower-summary">
+                <b>📡 БС ${enb}</b> (Знайдено: ${count} сект.)<br>
+                Приблизний центр: ${lat.toFixed(6)}, ${lng.toFixed(6)}<br>
+                <a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" style="display:inline-block; margin-top:5px; color:#9b59b6; font-weight:bold;">Відкрити в Google Maps</a>
+            </div>`;
+    }
+
+    async function runRangeScan() {
+        const password = document.getElementById('appPassword').value;
+        const start = parseInt(document.getElementById('startEnodeb').value);
+        const end = parseInt(document.getElementById('endEnodeb').value);
+        const opVal = document.getElementById('operator').value;
+        const checkedBoxes = document.querySelectorAll('.sector-cb:checked');
+
+        if (!password || isNaN(start) || isNaN(end) || !opVal) return alert("Заповніть всі поля!");
+        if (checkedBoxes.length === 0) return alert("Оберіть сектори!");
+
+        const [mcc, mnc] = opVal.split(',').map(Number);
+        const selectedSectors = Array.from(checkedBoxes).map(cb => ({
+            band: cb.dataset.band,
+            sector: parseInt(cb.value)
+        }));
+
+        const btn = document.getElementById('scanBtn');
+        const status = document.getElementById('status-bar');
+        const results = document.getElementById('results');
+
+        btn.disabled = true;
+        status.style.display = 'block';
+        results.innerHTML = '';
+        
+        document.getElementById('map-container').style.display = 'block';
+        if (!map) {
+            map = L.map('map-container').setView([49.0, 31.0], 6);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+            markersLayer.addTo(map);
+        } else {
+            markersLayer.clearLayers();
+        }
+        map.invalidateSize();
+
+        status.innerHTML = `⏳ Завантаження бази...`;
+        let localDB = {};
+        
+        try {
+            const dbResp = await fetch('https://cell-backend-pih1.onrender.com/all_towers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: password })
+            });
+            if (dbResp.ok) {
+                const dbData = await dbResp.json();
+                dbData.towers.forEach(row => {
+                    const cid = row.CellID || row.cellid || row['Cell ID'];
+                    if (cid && row.MCC == mcc && row.MNC == mnc) {
+                        localDB[cid] = { lat: row.Lat || row.lat, lng: row.Lng || row.lng };
+                    }
+                });
+            }
+        } catch(e) { console.error("Помилка бази", e); }
+
+        for (let enb = start; enb <= end; enb++) {
+            status.innerHTML = `🔎 БС <b>${enb}</b> (${enb - start + 1} з ${end - start + 1})...`;
+            let bsCoords = [];
+            let newSectorsCount = 0;
+            let newBands = new Set();
+
+            for (let item of selectedSectors) {
+                const cellId = (enb * 256) + item.sector;
+
+                if (localDB[cellId]) {
+                    const lat = fixCoord(localDB[cellId].lat);
+                    const lng = fixCoord(localDB[cellId].lng);
+                    
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        bsCoords.push({ lat, lng });
+                        addResultCardCached(enb, item.sector, item.band, results);
+                        L.circleMarker([lat, lng], { radius: 5, color: '#95a5a6', opacity: 0.5 }).addTo(markersLayer);
+                    }
+                } else {
+                    try {
+                        await new Promise(r => setTimeout(r, 450));
+                        const resp = await fetch('https://cell-backend-pih1.onrender.com/locate', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password, cellId, mcc, mnc })
+                        });
+                        const d = await resp.json();
+                        if (resp.ok) {
+                            const lat = fixCoord(d.location.lat);
+                            const lng = fixCoord(d.location.lng);
+                            bsCoords.push({ lat, lng });
+                            addResultCard(enb, item.sector, item.band, lat, lng, results);
+                            L.circleMarker([lat, lng], { radius: 6, color: '#3498db', fillOpacity: 0.8 }).addTo(markersLayer);
+                            newSectorsCount++;
+                            newBands.add(item.band);
+                        }
+                    } catch (e) { console.error(e); }
+                }
+            }
+
+            if (newSectorsCount > 0) {
+                try {
+                    await fetch('https://cell-backend-pih1.onrender.com/notify_telegram', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password, mcc, mnc, enodeb: enb, new_sectors_count: newSectorsCount, new_bands: Array.from(newBands) })
+                    });
+                } catch(e) {}
+            }
+
+            if (bsCoords.length > 0) {
+                let sumLat = 0, sumLng = 0;
+                bsCoords.forEach(c => { sumLat += c.lat; sumLng += c.lng; });
+                const aLat = sumLat / bsCoords.length;
+                const aLng = sumLng / bsCoords.length;
+                
+                if (!isNaN(aLat) && !isNaN(aLng)) {
+                    addTowerSummary(enb, aLat, aLng, bsCoords.length, results);
+                    L.marker([aLat, aLng]).addTo(markersLayer).bindPopup(`БС ${enb}`);
+                    map.setView([aLat, aLng], 14);
+                }
+            }
+        }
+
+        status.innerHTML = "✅ Сканування завершено!";
+        btn.disabled = false;
+    }
+</script>
+</body>
+</html>
