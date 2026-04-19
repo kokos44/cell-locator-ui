@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LTE Range Scanner Pro</title>
+    <title>LTE Range Scanner</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; max-width: 900px; margin: 40px auto; padding: 20px; }
@@ -81,7 +81,6 @@
     </div>
 
     <button id="scanBtn" class="main-btn" onclick="runRangeScan()">Почати масове сканування</button>
-    <button id="stopBtn" onclick="stopScan()" style="display: none; background-color: #e74c3c; margin-top: 10px; width: 100%; padding: 15px; color: white; border: none; border-radius: 5px; font-size: 16px; font-weight: bold; cursor: pointer;">🛑 Зупинити</button>
 
     <div id="status-bar"></div>
     <div id="map-container"></div>
@@ -96,8 +95,8 @@
         "255,6": { "B1": [12, 22, 32], "B3": [11, 21, 31], "B7": [13, 23, 33], "B8": [19, 29, 39] }
     };
 
-    let map = null, markersLayer = L.layerGroup();
-    let isScanning = false;
+    let map = null;
+    let markersLayer = L.layerGroup();
 
     // Генерація чекбоксів при зміні оператора
     document.getElementById('operator').addEventListener('change', function() {
@@ -147,58 +146,7 @@
         document.querySelectorAll(`.cb-${band}`).forEach(cb => cb.checked = state);
     }
 
-    function stopScan() {
-        isScanning = false;
-        const stopBtn = document.getElementById('stopBtn');
-        stopBtn.innerText = "Зупиняю...";
-        stopBtn.disabled = true;
-    }
-
     function fixCoord(val) {
         if (val === undefined || val === null || val === '') return NaN;
         let s = String(val).replace(/,/g, '.').replace(/\s/g, '');
-        let n = parseFloat(s);
-        if (isNaN(n)) return NaN;
-        if (Math.abs(n) > 100) {
-            let cleanStr = String(Math.floor(Math.abs(n)));
-            n = parseFloat(cleanStr.substring(0, 2) + '.' + cleanStr.substring(2));
-            if (s.includes('-')) n = -n;
-        }
-        return n;
-    }
-
-    function initMapBase() {
-        document.getElementById('map-container').style.display = 'block';
-        if (!map) {
-            map = L.map('map-container').setView([49.0, 31.0], 6);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap contributors'
-            }).addTo(map);
-            markersLayer.addTo(map);
-        } else {
-            markersLayer.clearLayers();
-        }
-        map.invalidateSize();
-    }
-
-    function addResultCardCached(enb, s, band, container) {
-        container.innerHTML += `
-            <div class="result-card" style="border-left-color: #f1c40f; background: #fdfae6; color: #7f8c8d;">
-                БС <b>${enb}</b> | Сектор ${s} <span class="badge" style="background: #95a5a6;">${band}</span><br>
-                <em>Вже є в базі (Already found)</em>
-            </div>`;
-    }
-
-    function addResultCard(enb, s, band, lat, lng, container) {
-        container.innerHTML += `
-            <div class="result-card success">
-                БС <b>${enb}</b> | Сектор ${s} <span class="badge">${band}</span><br>
-                ${lat}, ${lng}
-            </div>`;
-    }
-
-    function addTowerSummary(enb, lat, lng, count, container) {
-        container.innerHTML += `
-            <div class="result-card tower-summary">
-                <b>📡 БС ${enb}</b> (Знайдено: ${count} сект.)<br>
-                Приблизний центр: ${lat.toFixed(6)}, ${lng.toFixed(6)}
+        let n
