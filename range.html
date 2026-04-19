@@ -146,6 +146,16 @@
         document.querySelectorAll(`.cb-${band}`).forEach(cb => cb.checked = state);
     }
 
+    // РУБИЛЬНИК
+    let isScanning = false;
+
+    function stopScan() {
+        isScanning = false;
+        const stopBtn = document.getElementById('stopBtn');
+        stopBtn.innerText = "Зупиняю...";
+        stopBtn.disabled = true;
+    }
+
     async function runRangeScan() {
         const password = document.getElementById('appPassword').value;
         const start = parseInt(document.getElementById('startEnodeb').value);
@@ -163,10 +173,17 @@
         }));
 
         const btn = document.getElementById('scanBtn');
+        const stopBtn = document.getElementById('stopBtn'); // Знаходимо нову кнопку
         const status = document.getElementById('status-bar');
         const results = document.getElementById('results');
 
-        btn.disabled = true;
+        // Вмикаємо режим сканування
+        isScanning = true;
+        btn.style.display = 'none'; // Ховаємо кнопку Старт
+        stopBtn.style.display = 'block'; // Показуємо кнопку Стоп
+        stopBtn.disabled = false;
+        stopBtn.innerText = "🛑 Зупинити";
+        
         status.style.display = 'block';
         results.innerHTML = '';
         
@@ -182,86 +199,41 @@
 
         status.innerHTML = `⏳ Завантаження бази...`;
         let localDB = {};
-        try {
-            const dbResp = await fetch('https://cell-backend-pih1.onrender.com/all_towers', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password: password })
-            });
-            if (dbResp.ok) {
-                const dbData = await dbResp.json();
-                dbData.towers.forEach(row => {
-                    const cid = row.CellID || row.cellid || row['Cell ID'];
-                    if (cid && row.MCC == mcc && row.MNC == mnc) {
-                        localDB[cid] = { lat: row.Lat || row.lat, lng: row.Lng || row.lng };
-                    }
-                });
-            }
-        } catch(e) { console.error(e); }
+        // ... (тут іде завантаження бази localDB, залишаєте як є) ...
 
+        // 2. СКАНУВАННЯ
         for (let enb = start; enb <= end; enb++) {
+            // ПЕРЕВІРКА РУБИЛЬНИКА ПЕРЕД КОЖНОЮ НОВОЮ ВЕЖЕЮ
+            if (!isScanning) {
+                status.innerHTML += `<br>🛑 <b style="color:#e74c3c;">Сканування перервано користувачем!</b>`;
+                break; // Виходимо з головного циклу
+            }
+
             status.innerHTML = `🔎 БС <b>${enb}</b> (${enb - start + 1} з ${end - start + 1})...`;
             let bsCoords = [];
             let newSectorsCount = 0;
             let newBands = new Set();
 
             for (let item of selectedSectors) {
+                // ПЕРЕВІРКА РУБИЛЬНИКА ПЕРЕД КОЖНИМ СЕКТОРОМ
+                if (!isScanning) break; 
+
                 const cellId = (enb * 256) + item.sector;
-
-                if (localDB[cellId]) {
-                    // ВИКОРИСТОВУЄМО НАШ РОЗУМНИЙ ФІЛЬТР
-                    const lat = fixCoord(localDB[cellId].lat);
-                    const lng = fixCoord(localDB[cellId].lng);
-                    
-                    if (!isNaN(lat) && !isNaN(lng)) {
-                        bsCoords.push({ lat, lng });
-                        addResultCardCached(enb, item.sector, item.band, results);
-                        L.circleMarker([lat, lng], { radius: 5, color: '#95a5a6', opacity: 0.5 }).addTo(markersLayer);
-                    }
-                } else {
-                    try {
-                        await new Promise(r => setTimeout(r, 450));
-                        const resp = await fetch('https://cell-backend-pih1.onrender.com/locate', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ password, cellId, mcc, mnc })
-                        });
-                        const d = await resp.json();
-                        if (resp.ok) {
-                            const lat = fixCoord(d.location.lat);
-                            const lng = fixCoord(d.location.lng);
-                            bsCoords.push({ lat, lng });
-                            addResultCard(enb, item.sector, item.band, lat, lng, results);
-                            L.circleMarker([lat, lng], { radius: 6, color: '#3498db', fillOpacity: 0.8 }).addTo(markersLayer);
-                            newSectorsCount++;
-                            newBands.add(item.band);
-                        }
-                    } catch (e) { console.error(e); }
-                }
+                // ... (тут іде ваш код запитів до localDB та fetch до Google, залишаєте як є) ...
             }
 
-            if (newSectorsCount > 0) {
-                fetch('https://cell-backend-pih1.onrender.com/notify_telegram', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password, mcc, mnc, enodeb: enb, new_sectors_count: newSectorsCount, new_bands: Array.from(newBands) })
-                });
-            }
-
-            if (bsCoords.length > 0) {
-                let sumLat = 0, sumLng = 0;
-                bsCoords.forEach(c => { sumLat += c.lat; sumLng += c.lng; });
-                const aLat = sumLat / bsCoords.length;
-                const aLng = sumLng / bsCoords.length;
-                
-                if (!isNaN(aLat) && !isNaN(aLng)) {
-                    addTowerSummary(enb, aLat, aLng, bsCoords.length, results);
-                    L.marker([aLat, aLng]).addTo(markersLayer).bindPopup(`БС ${enb}`);
-                    map.setView([aLat, aLng], 14);
-                }
-            }
+            // ... (Telegram відправка та малювання маркера вежі залишаються як є) ...
         }
-        status.innerHTML = "✅ Сканування завершено!";
+
+        // КОЛИ СКАНУВАННЯ ЗАВЕРШЕНО (або успішно, або перервано)
+        if (isScanning) {
+            status.innerHTML = "✅ Сканування завершено!";
+        }
+        isScanning = false;
+        
+        // Повертаємо кнопки в початковий стан
+        stopBtn.style.display = 'none';
+        btn.style.display = 'block';
         btn.disabled = false;
     }
 
