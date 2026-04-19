@@ -17,7 +17,6 @@
         button.main-btn:hover { background-color: #219150; }
         button.main-btn:disabled { background-color: #95a5a6; cursor: not-allowed; }
         
-        /* Стилі для панелі секторів */
         .sectors-panel { border: 1px solid #ccc; border-radius: 5px; padding: 15px; background: #fdfdfd; max-height: 280px; overflow-y: auto; }
         .band-group { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px dashed #eee; }
         .band-group:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
@@ -44,9 +43,9 @@
 
 <div class="container">
     <h2>Масовий сканер LTE БС</h2>
-  <div style="text-align: center; margin-bottom: 20px;">
-    <a href="index.html" style="color: #3498db; font-weight: bold; text-decoration: none;">⬅️ Повернутися до Швидкого сканера</a>
-</div>
+    <div style="text-align: center; margin-bottom: 20px;">
+        <a href="index.html" style="color: #3498db; font-weight: bold; text-decoration: none;">⬅️ Повернутися до Швидкого сканера</a>
+    </div>
     
     <div class="form-group">
         <label for="appPassword">Пароль доступу:</label>
@@ -82,6 +81,7 @@
     </div>
 
     <button id="scanBtn" class="main-btn" onclick="runRangeScan()">Почати масове сканування</button>
+    <button id="stopBtn" onclick="stopScan()" style="display: none; background-color: #e74c3c; margin-top: 10px; width: 100%; padding: 15px; color: white; border: none; border-radius: 5px; font-size: 16px; font-weight: bold; cursor: pointer;">🛑 Зупинити</button>
 
     <div id="status-bar"></div>
     <div id="map-container"></div>
@@ -97,8 +97,8 @@
     };
 
     let map = null, markersLayer = L.layerGroup();
+    let isScanning = false;
 
-    // Генерація чекбоксів при зміні оператора
     document.getElementById('operator').addEventListener('change', function() {
         const panel = document.getElementById('sectors-panel');
         if (!this.value) {
@@ -138,16 +138,13 @@
         panel.innerHTML = html;
     });
 
-    // Функції для керування галочками
     function toggleAllGlobal(state) {
         document.querySelectorAll('.sector-cb').forEach(cb => cb.checked = state);
     }
+    
     function toggleBand(band, state) {
         document.querySelectorAll(`.cb-${band}`).forEach(cb => cb.checked = state);
     }
-
-    // РУБИЛЬНИК
-    let isScanning = false;
 
     function stopScan() {
         isScanning = false;
@@ -156,96 +153,11 @@
         stopBtn.disabled = true;
     }
 
-    async function runRangeScan() {
-        const password = document.getElementById('appPassword').value;
-        const start = parseInt(document.getElementById('startEnodeb').value);
-        const end = parseInt(document.getElementById('endEnodeb').value);
-        const opVal = document.getElementById('operator').value;
-        const checkedBoxes = document.querySelectorAll('.sector-cb:checked');
-
-        if (!password || isNaN(start) || isNaN(end) || !opVal) return alert("Заповніть всі поля!");
-        if (checkedBoxes.length === 0) return alert("Оберіть сектори!");
-
-        const [mcc, mnc] = opVal.split(',').map(Number);
-        const selectedSectors = Array.from(checkedBoxes).map(cb => ({
-            band: cb.dataset.band,
-            sector: parseInt(cb.value)
-        }));
-
-        const btn = document.getElementById('scanBtn');
-        const stopBtn = document.getElementById('stopBtn'); // Знаходимо нову кнопку
-        const status = document.getElementById('status-bar');
-        const results = document.getElementById('results');
-
-        // Вмикаємо режим сканування
-        isScanning = true;
-        btn.style.display = 'none'; // Ховаємо кнопку Старт
-        stopBtn.style.display = 'block'; // Показуємо кнопку Стоп
-        stopBtn.disabled = false;
-        stopBtn.innerText = "🛑 Зупинити";
-        
-        status.style.display = 'block';
-        results.innerHTML = '';
-        
-        document.getElementById('map-container').style.display = 'block';
-        if (!map) {
-            map = L.map('map-container').setView([49.0, 31.0], 6);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-            markersLayer.addTo(map);
-        } else {
-            markersLayer.clearLayers();
-        }
-        map.invalidateSize();
-
-        status.innerHTML = `⏳ Завантаження бази...`;
-        let localDB = {};
-        // ... (тут іде завантаження бази localDB, залишаєте як є) ...
-
-        // 2. СКАНУВАННЯ
-        for (let enb = start; enb <= end; enb++) {
-            // ПЕРЕВІРКА РУБИЛЬНИКА ПЕРЕД КОЖНОЮ НОВОЮ ВЕЖЕЮ
-            if (!isScanning) {
-                status.innerHTML += `<br>🛑 <b style="color:#e74c3c;">Сканування перервано користувачем!</b>`;
-                break; // Виходимо з головного циклу
-            }
-
-            status.innerHTML = `🔎 БС <b>${enb}</b> (${enb - start + 1} з ${end - start + 1})...`;
-            let bsCoords = [];
-            let newSectorsCount = 0;
-            let newBands = new Set();
-
-            for (let item of selectedSectors) {
-                // ПЕРЕВІРКА РУБИЛЬНИКА ПЕРЕД КОЖНИМ СЕКТОРОМ
-                if (!isScanning) break; 
-
-                const cellId = (enb * 256) + item.sector;
-                // ... (тут іде ваш код запитів до localDB та fetch до Google, залишаєте як є) ...
-            }
-
-            // ... (Telegram відправка та малювання маркера вежі залишаються як є) ...
-        }
-
-        // КОЛИ СКАНУВАННЯ ЗАВЕРШЕНО (або успішно, або перервано)
-        if (isScanning) {
-            status.innerHTML = "✅ Сканування завершено!";
-        }
-        isScanning = false;
-        
-        // Повертаємо кнопки в початковий стан
-        stopBtn.style.display = 'none';
-        btn.style.display = 'block';
-        btn.disabled = false;
-    }
-
     function fixCoord(val) {
         if (val === undefined || val === null || val === '') return NaN;
-        // Замінюємо кому на крапку і прибираємо випадкові пробіли
         let s = String(val).replace(/,/g, '.').replace(/\s/g, '');
         let n = parseFloat(s);
         if (isNaN(n)) return NaN;
-        
-        // Якщо число неадекватно велике (> 100) - Google Sheets з'їв крапку!
-        // Повертаємо її примусово після перших двох цифр.
         if (Math.abs(n) > 100) {
             let cleanStr = String(Math.floor(Math.abs(n)));
             n = parseFloat(cleanStr.substring(0, 2) + '.' + cleanStr.substring(2));
@@ -254,7 +166,20 @@
         return n;
     }
 
-    // НОВА ФУНКЦІЯ: Картка для секторів, що вже є в базі
+    function initMapBase() {
+        document.getElementById('map-container').style.display = 'block';
+        if (!map) {
+            map = L.map('map-container').setView([49.0, 31.0], 6);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+            markersLayer.addTo(map);
+        } else {
+            markersLayer.clearLayers();
+        }
+        map.invalidateSize();
+    }
+
     function addResultCardCached(enb, s, band, container) {
         container.innerHTML += `
             <div class="result-card" style="border-left-color: #f1c40f; background: #fdfae6; color: #7f8c8d;">
@@ -280,36 +205,6 @@
             </div>`;
     }
 
-    function addResultCard(enb, s, band, lat, lng, container) {
-        container.innerHTML += `
-            <div class="result-card success">
-                БС <b>${enb}</b> | Сектор ${s} <span class="badge">${band}</span><br>
-                ${lat}, ${lng}
-            </div>`;
-    }
-
-    function addTowerSummary(enb, lat, lng, count, container) {
-        container.innerHTML += `
-            <div class="result-card tower-summary">
-                <b>📡 БС ${enb}</b> (Знайдено: ${count} сект.)<br>
-                Приблизний центр: ${lat.toFixed(6)}, ${lng.toFixed(6)}<br>
-                <a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" style="display:inline-block; margin-top:5px; color:#9b59b6; font-weight:bold;">Відкрити в Google Maps</a>
-            </div>`;
-    }
-
-    function initMapBase() {
-        document.getElementById('map-container').style.display = 'block';
-        if (!map) {
-            // Центр України за замовчуванням
-            map = L.map('map-container').setView([49.0, 31.0], 6);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; OpenStreetMap contributors'
-            }).addTo(map);
-            markersLayer.addTo(map);
-        } else {
-            markersLayer.clearLayers();
-        }
-    }
-</script>
-</body>
-</html>
+    async function runRangeScan() {
+        const password = document.getElementById('appPassword').value;
+        const start = parseInt(
